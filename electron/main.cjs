@@ -4,6 +4,26 @@ const path = require('node:path');
 const fs = require('node:fs');
 const fsp = require('node:fs/promises');
 const { Readable } = require('node:stream');
+const { spawn } = require('node:child_process');
+
+// bundled ffmpeg (unpacked from the asar archive in the packaged app)
+let FFMPEG = null;
+try { FFMPEG = require('ffmpeg-static').replace('app.asar', 'app.asar.unpacked'); } catch { /* optional */ }
+
+/** Run ffmpeg; progress (0..1) is parsed from its stderr when the duration is known. */
+function ffmpeg(args, durationS, onProgress) {
+  return new Promise((resolve, reject) => {
+    if (!FFMPEG) return reject(new Error('ffmpeg indisponible'));
+    const p = spawn(FFMPEG, ['-hide_banner', '-y', ...args]);
+    let err = '';
+    p.stderr.on('data', (d) => {
+      const s = d.toString(); err = (err + s).slice(-4000);
+      const m = /time=(\d+):(\d+):(\d+\.\d+)/.exec(s);
+      if (m && durationS && onProgress) onProgress(Math.min(1, (+m[1] * 3600 + +m[2] * 60 + +m[3]) / durationS));
+    });
+    p.on('close', (code) => (code === 0 ? resolve() : reject(new Error('ffmpeg: ' + err.split('\n').filter(Boolean).slice(-2).join(' ')))));
+  });
+}
 
 const ROOT = path.join(app.getPath('videos'), 'CutLab');
 const PROJECTS = path.join(ROOT, 'Projects');
@@ -125,6 +145,25 @@ function registerIpc() {
     const file = path.join(projectDir(id), 'cache', path.basename(name));
     await atomicWrite(file, Buffer.from(data));
     return { name: path.basename(file), path: file, url: toUrl(file), mime: MIME[path.extname(file).toLowerCase()] || '', size: data.byteLength };
+  });
+  ipcMain.handle('media:transcode', async (e, input, id, durationS) => {
+    const ext = path.extname(input).toLowerCase();
+    const isImage = ['.heic', '.heif', '.tif', '.tiff', '.bmp'].includes(ext);
+    const out = path.join(projectDir(id), 'cache', path.basename(input, ext) + (isImage ? '.png' : '.mp4'));
+    await fsp.mkdir(path.dirname(out), { recursive: true });
+    const args = isImage ? ['-i', input, '-frames:v', '1', out]
+      : ['-i', input, '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '17', '-pix_fmt', 'yuv420p', '-c:a', 'aac', '-b:a', '256k', '-movflags', '+faststart', out];
+    await ffmpeg(args, durationS, (r) => e.sender.send('ffmpeg:progress', input, r));
+    return { name: path.basename(input), path: out, url: toUrl(out), mime: isImage ? 'image/png' : 'video/mp4', size: fs.statSync(out).size };
+  });
+  ipcMain.handle('export:finalize', async (_e, file, opts) => {
+    const ext = opts.mov ? '.mov' : path.extname(file);
+    const tmp = file + '.tmp' + ext;
+    const out = opts.mov ? file.replace(/\.[^.]+$/, '') + '.mov' : file;
+    await ffmpeg(['-i', file, '-c:v', 'copy', ...(opts.aac ? ['-c:a', 'aac', '-b:a', '256k'] : ['-c:a', 'copy']), '-movflags', '+faststart', tmp]);
+    await fsp.rename(tmp, out);
+    if (out !== file) await fsp.rm(file, { force: true });
+    return out;
   });
   ipcMain.on('files:reveal', (_e, p) => shell.showItemInFolder(p));
 }

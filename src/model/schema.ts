@@ -57,6 +57,7 @@ export type AnimPreset = 'none' | 'fade' | 'zoom' | 'slideUp' | 'slideLeft' | 'p
 export interface Clip {
   id: string;
   assetId?: string;      // media clips
+  audioAssetId?: string; // processed sound (noise reduction…) replacing the asset's own, same timing
   startUs: Us;           // position on the timeline
   durationUs: Us;        // length on the timeline (after speed)
   inUs: Us;              // source in-point
@@ -65,6 +66,7 @@ export interface Clip {
   enabled: boolean;
   transform: Transform;
   blend: BlendMode;
+  crop?: { l: number; t: number; r: number; b: number };   // fraction removed from each side
   volumeDb: number;
   fadeInUs: Us;
   fadeOutUs: Us;

@@ -10,14 +10,14 @@ import { loadImage } from './media';
 const DRIFT_S = 0.15;
 const PRELOAD_US = 1_500_000;
 
-interface MediaEl { el: HTMLMediaElement; gain?: GainNode; lastUse: number; assetId: string }
+interface MediaEl { el: HTMLMediaElement; gain?: GainNode; lastUse: number; assetId: string; url: string }
 
 export const dbToGain = (db: number) => (db <= -60 ? 0 : Math.pow(10, db / 20));
 
 export class Player {
   comp: Compositor;
   els = new Map<string, MediaEl>();             // by clip id
-  images = new Map<string, HTMLImageElement>(); // by asset id
+  images = new Map<string, HTMLImageElement>(); // by url (a relinked asset reloads)
   imageLoading = new Set<string>();
   missing = new Set<string>();                  // asset ids whose file is gone
   actx: AudioContext | null = null;
@@ -68,7 +68,7 @@ export class Player {
 
   private element(p: Project, clip: Clip, asset: Asset, key = clip.id): HTMLMediaElement {
     let m = this.els.get(key);
-    if (!m || m.assetId !== asset.id) {
+    if (!m || m.assetId !== asset.id || m.url !== asset.url) {
       if (m) { m.el.pause(); m.el.removeAttribute('src'); }
       const el = asset.kind === 'audio' ? document.createElement('audio') : document.createElement('video');
       el.crossOrigin = 'anonymous';
@@ -83,7 +83,8 @@ export class Player {
         const tick = () => { this.needsRender = true; if (this.els.get(key)?.el === v) v.requestVideoFrameCallback(tick); };
         v.requestVideoFrameCallback(tick);
       }
-      m = { el, lastUse: performance.now(), assetId: asset.id };
+      m = { el, lastUse: performance.now(), assetId: asset.id, url: asset.url };
+      this.missing.delete(asset.id);
       this.els.set(key, m);
     }
     m.lastUse = performance.now();
@@ -123,41 +124,26 @@ export class Player {
         if (!visibleSoon) continue;
         if (track.kind !== 'audio' && track.hidden && !audible.has(c.id)) continue;
         active.add(c.id);
+        const inside = t >= c.startUs && t < clipEnd(c);
+        const run = playing && inside && !c.reverse;
+        const srcT = sourceTimeAt(c, Math.max(t, c.startUs));
+        const gain = audible.get(c.id) ?? 0;
+        // matte (background removal) follows the same source time, shifted
         const matte = c.effects.find(e => e.kind === 'matte' && e.enabled);
         const mAsset = matte && p.assets.find(a => a.id === matte.params.maskAssetId);
         if (mAsset) {
           const key = c.id + ':matte';
           active.add(key);
-          const me = this.element(p, c, mAsset, key);
-          me.muted = true;
-          const mt = (sourceTimeAt(c, Math.max(t, c.startUs)) - Number(matte!.params.maskStartUs ?? 0)) / 1e6;
-          const inside0 = t >= c.startUs && t < clipEnd(c);
-          if (playing && inside0 && !c.reverse) {
-            me.playbackRate = Math.min(16, Math.max(0.0625, c.speed));
-            if (Math.abs(me.currentTime - mt) > DRIFT_S * Math.max(1, c.speed)) me.currentTime = mt;
-            if (me.paused) me.play().catch(() => {});
-          } else {
-            if (!me.paused) me.pause();
-            if (me.readyState >= 1 && Math.abs(me.currentTime - mt) > 0.5 / p.fps) me.currentTime = mt;
-          }
+          this.drive(this.element(p, c, mAsset, key), key, (srcT - Number(matte!.params.maskStartUs ?? 0)) / 1e6, null, run, c.speed, p.fps);
         }
-        const el = this.element(p, c, asset);
-        const m = this.els.get(c.id)!;
-        const inside = t >= c.startUs && t < clipEnd(c);
-        const target = sourceTimeAt(c, Math.max(t, c.startUs)) / 1e6;
-        const gain = audible.get(c.id) ?? 0;
-        if (playing && inside && !c.reverse) {
-          this.connectGain(m);
-          if (m.gain) { m.gain.gain.value = gain; el.muted = false; el.volume = 1; }
-          else { el.muted = gain === 0; el.volume = Math.min(1, gain); }
-          el.playbackRate = Math.min(16, Math.max(0.0625, c.speed));
-          (el as any).preservesPitch = true;
-          if (Math.abs(el.currentTime - target) > DRIFT_S * Math.max(1, c.speed)) el.currentTime = target;
-          if (el.paused) el.play().catch(() => {});
-        } else {
-          if (!el.paused) el.pause();
-          if (el.readyState >= 1 && Math.abs(el.currentTime - target) > 0.5 / p.fps) el.currentTime = target;
+        // processed audio (noise reduction…) replaces the clip's own sound
+        const aAsset = c.audioAssetId ? p.assets.find(a => a.id === c.audioAssetId) : undefined;
+        if (aAsset) {
+          const key = c.id + ':audio';
+          active.add(key);
+          this.drive(this.element(p, c, aAsset, key), key, srcT / 1e6, gain, run, c.speed, p.fps);
         }
+        this.drive(this.element(p, c, asset), c.id, srcT / 1e6, aAsset ? 0 : gain, run, c.speed, p.fps);
       }
     }
     // pause and drop elements no longer needed
@@ -166,6 +152,26 @@ export class Player {
       if (active.has(id)) continue;
       if (!m.el.paused) m.el.pause();
       if (now - m.lastUse > 10_000) { m.el.removeAttribute('src'); m.el.load(); this.els.delete(id); }
+    }
+  }
+
+  /** Play/seek one element; gain null = always muted (matte). */
+  private drive(el: HTMLMediaElement, key: string, target: number, gain: number | null, run: boolean, speed: number, fps: number) {
+    const m = this.els.get(key)!;
+    if (run) {
+      if (gain === null) el.muted = true;
+      else {
+        this.connectGain(m);
+        if (m.gain) { m.gain.gain.value = gain; el.muted = false; el.volume = 1; }
+        else { el.muted = gain === 0; el.volume = Math.min(1, gain); }
+      }
+      el.playbackRate = Math.min(16, Math.max(0.0625, speed));
+      (el as any).preservesPitch = true;
+      if (Math.abs(el.currentTime - target) > DRIFT_S * Math.max(1, speed)) el.currentTime = target;
+      if (el.paused) el.play().catch(() => {});
+    } else {
+      if (!el.paused) el.pause();
+      if (el.readyState >= 1 && Math.abs(el.currentTime - target) > 0.5 / fps) el.currentTime = target;
     }
   }
 
@@ -185,11 +191,11 @@ export class Player {
       if (!v || v.readyState < 2 || !v.videoWidth) return null;
       return { el: v, w: v.videoWidth, h: v.videoHeight, key: 'v:' + L.clip.id, dynamic: true, fit: 'contain' };
     }
-    const img = this.images.get(asset.id);
+    const img = this.images.get(asset.url);
     if (!img) {
-      if (!this.imageLoading.has(asset.id)) {
-        this.imageLoading.add(asset.id);
-        loadImage(asset.url).then(i => { this.images.set(asset.id, i); this.needsRender = true; })
+      if (asset.url && !this.imageLoading.has(asset.url)) {
+        this.imageLoading.add(asset.url);
+        loadImage(asset.url).then(i => { this.images.set(asset.url, i); this.needsRender = true; })
           .catch(() => { this.missing.add(asset.id); this.onMissing?.(this.missing); });
       }
       return null;

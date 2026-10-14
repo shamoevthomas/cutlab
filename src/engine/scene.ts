@@ -17,6 +17,7 @@ export interface Layer {
   chroma: { on: boolean; color: [number, number, number]; intensity: number; shadow: number };
   blend: Clip['blend'];
   matte?: { assetId: string; offsetUs: number; invert: boolean };
+  crop: { l: number; t: number; r: number; b: number };
 }
 
 export interface Adjust {
@@ -89,7 +90,7 @@ function baseLayer(track: Track, c: Clip, t: Us, kind: Layer['kind']): Layer {
     x: valueAt(c, 'x', rel), y: valueAt(c, 'y', rel), scale: valueAt(c, 'scale', rel),
     rotation: valueAt(c, 'rotation', rel), opacity: valueAt(c, 'opacity', rel),
     flipH: c.transform.flipH, flipV: c.transform.flipV, wipe: 0,
-    adjust: adjustOf(c), chroma: chromaOf(c), blend: c.blend, matte: matteOf(c),
+    adjust: adjustOf(c), chroma: chromaOf(c), blend: c.blend, matte: matteOf(c), crop: c.crop ?? { l: 0, t: 0, r: 0, b: 0 },
   };
   const d = Math.min(c.animDurUs, c.durationUs / 2);
   if (c.animIn !== 'none' && rel < d) applyAnim(L, c.animIn, rel / d);
@@ -172,9 +173,9 @@ export function audioClips(p: Project): AudioSource[] {
     if (track.kind !== 'audio' && track.kind !== 'video') continue;
     for (const c of track.clips) {
       if (!c.enabled || !c.assetId) continue;
-      const a = p.assets.find(x => x.id === c.assetId);
+      const a = p.assets.find(x => x.id === (c.audioAssetId ?? c.assetId));
       if (!a || !a.hasAudio || a.kind === 'image') continue;
-      out.push({ clip: c, assetId: a.id, gainDb: c.volumeDb, muted: track.muted || (track.kind === 'video' && track.hidden && false) });
+      out.push({ clip: c, assetId: a.id, gainDb: c.volumeDb, muted: track.muted });
     }
   }
   return out;

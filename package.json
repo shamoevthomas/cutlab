@@ -30,11 +30,12 @@
       ],
       "identity": null
     },
-    "extraResources": []
+    "asarUnpack": ["node_modules/ffmpeg-static/**"]
   },
   "dependencies": {
     "@huggingface/transformers": "^3.0.2",
     "@mediapipe/tasks-vision": "^0.10.18",
+    "ffmpeg-static": "^5.2.0",
     "immer": "^10.1.1",
     "lucide-react": "^0.453.0",
     "mp4-muxer": "^5.1.3",

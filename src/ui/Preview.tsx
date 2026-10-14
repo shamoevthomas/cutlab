@@ -43,7 +43,7 @@ export function Preview() {
     return () => ro.disconnect();
   }, [project.canvas.width, project.canvas.height]);
 
-  const anyMissing = missing || project.assets.some(a => !a.url && project.tracks.some(t => t.clips.some(c => c.assetId === a.id)));
+  const anyMissing = (missing && project.assets.some(a => !a.url)) || project.assets.some(a => !a.url && project.tracks.some(t => t.clips.some(c => c.assetId === a.id)));
 
   return (
     <section className="panel" aria-label="Lecteur">

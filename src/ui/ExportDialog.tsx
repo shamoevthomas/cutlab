@@ -11,6 +11,7 @@ export function ExportDialog({ onClose }: { onClose: () => void }) {
   const inUs = useStore(s => s.inUs), outUs = useStore(s => s.outUs);
   const [name, setName] = useState(project.name);
   const [s, setS] = useState<ExportSettings>({ height: 1080, fps: project.fps, codec: 'h264', quality: 'recommended', includeAudio: true });
+  const [mov, setMov] = useState(false);
   const [useRange, setUseRange] = useState(inUs !== null && outUs !== null);
   const [progress, setProgress] = useState<ExportProgress | null>(null);
   const [done, setDone] = useState<string | null>(null);
@@ -28,9 +29,14 @@ export function ExportDialog({ onClose }: { onClose: () => void }) {
     abort.current = new AbortController();
     started.current = performance.now();
     try {
-      const data = await exportProject(project, { ...s, rangeStartUs: range[0], rangeEndUs: range[1] }, setProgress, abort.current.signal);
+      const { data, audioCodec } = await exportProject(project, { ...s, rangeStartUs: range[0], rangeEndUs: range[1] }, setProgress, abort.current.signal);
+      let path = await bridge.saveExport(`${name || 'export'}.${mov ? 'mov' : 'mp4'}`, data);
+      // QuickTime and many apps can't read Opus in MP4: re-encode the audio track to AAC (video is copied)
+      if (path && bridge.finalizeExport && (audioCodec === 'opus' || mov)) {
+        setProgress({ phase: 'finalizing', done: 1, total: 1 });
+        path = await bridge.finalizeExport(path, { aac: audioCodec === 'opus', mov });
+      }
       setProgress(null);
-      const path = await bridge.saveExport(`${name || 'export'}.mp4`, data);
       if (path) setDone(path);
     } catch (e: any) {
       setProgress(null);
@@ -81,12 +87,16 @@ export function ExportDialog({ onClose }: { onClose: () => void }) {
               <option value="h264">H.264 (compatible partout)</option><option value="hevc">HEVC / H.265 (plus léger)</option>
             </select></label>
         </div>
+        {bridge.finalizeExport && <label className="field"><span>Format</span>
+          <select className="input" value={mov ? 'mov' : 'mp4'} onChange={e => setMov(e.target.value === 'mov')} aria-label="Format du fichier">
+            <option value="mp4">MP4</option><option value="mov">MOV (QuickTime)</option>
+          </select></label>}
         <label className="row"><input type="checkbox" checked={s.includeAudio} onChange={e => setS({ ...s, includeAudio: e.target.checked })} /> Inclure le son</label>
         <label className="row" style={{ opacity: inUs !== null && outUs !== null ? 1 : .5 }}>
           <input type="checkbox" disabled={inUs === null || outUs === null} checked={useRange} onChange={e => setUseRange(e.target.checked)} />
           Exporter seulement la zone entrée / sortie (I / O)
         </label>
-        <div className="faint" style={{ fontSize: 'var(--fs-sm)' }}>MP4 · {W}×{H} · {(br / 1e6).toFixed(1)} Mb/s · {fmtDur(range[1] - range[0])} · ≈ {sizeMb < 1 ? '<1' : Math.round(sizeMb)} Mo · sans filigrane</div>
+        <div className="faint" style={{ fontSize: 'var(--fs-sm)' }}>{mov ? 'MOV' : 'MP4'} · {W}×{H} · {(br / 1e6).toFixed(1)} Mb/s · {fmtDur(range[1] - range[0])} · ≈ {sizeMb < 1 ? '<1' : Math.round(sizeMb)} Mo · sans filigrane</div>
         {error && <div style={{ color: 'var(--c-danger)' }} role="alert">{error}</div>}
       </>}
     </Modal>

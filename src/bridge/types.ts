@@ -21,5 +21,9 @@ export interface Bridge {
   /** Write a generated file (matte, processed audio…) into the project's cache folder. */
   writeFile(projectId: string, name: string, data: Uint8Array): Promise<PickedFile>;
   reveal?(path: string): void;
+  /** Desktop only: convert a file the engine cannot read (ProRes, HEIC…) into H.264 / PNG. */
+  transcode?(input: string, projectId: string, durationS: number | null, onProgress?: (r: number) => void): Promise<PickedFile>;
+  /** Desktop only: remux the exported file (AAC audio for QuickTime, MOV container). */
+  finalizeExport?(file: string, opts: { aac: boolean; mov: boolean }): Promise<string>;
   projectFolder?(id: string): Promise<string>;
 }

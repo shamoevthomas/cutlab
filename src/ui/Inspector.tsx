@@ -7,7 +7,7 @@ import { uid, RATIOS } from '../model/schema';
 import { SliderRow, Switch } from './common';
 import { FILTERS, neutralAdjust } from '../engine/scene';
 import { bridge } from '../bridge';
-import { normalizeClips, autoReframe, removeBackground, ReframeSpeed } from '../actions';
+import { normalizeClips, autoReframe, removeBackground, ReframeSpeed, cleanAudio, resetAudio, importFonts } from '../actions';
 import { LOUDNESS_TARGETS } from '../model/loudness';
 
 type Tab = 'basic' | 'text' | 'anim' | 'speed' | 'audio' | 'adjust' | 'chroma';
@@ -173,9 +173,39 @@ function BasicTab({ clip }: { clip: Clip }) {
           </select>
         </label>
       </div>
+      <CropBox clip={clip} />
       <ReframeBox clip={clip} />
       <div className="hint">◆ pose une image clé à la tête de lecture : la valeur s’anime entre deux images clés.</div>
     </>
+  );
+}
+
+const CROP_RATIOS: [string, number | null][] = [['Libre', null], ['16:9', 16 / 9], ['9:16', 9 / 16], ['1:1', 1], ['4:5', 4 / 5]];
+
+function CropBox({ clip }: { clip: Clip }) {
+  const project = useStore(s => s.project)!;
+  const asset = project.assets.find(a => a.id === clip.assetId);
+  if (!asset || !asset.width || !asset.height || clip.text) return null;
+  const c = clip.crop ?? { l: 0, t: 0, r: 0, b: 0 };
+  const set = (k: keyof typeof c, v: number) => editClip(clip.id, x => {
+    const cur = { ...(x.crop ?? { l: 0, t: 0, r: 0, b: 0 }), [k]: v / 100 };
+    if (cur.l + cur.r > 0.95 || cur.t + cur.b > 0.95) return;
+    x.crop = cur;
+  }, clip.id + ':crop:' + k);
+  const preset = (ratio: number | null) => editClip(clip.id, x => {
+    if (!ratio) { delete x.crop; return; }
+    const src = asset.width! / asset.height!;
+    if (src > ratio) { const keep = ratio / src; x.crop = { l: (1 - keep) / 2, r: (1 - keep) / 2, t: 0, b: 0 }; }
+    else { const keep = src / ratio; x.crop = { t: (1 - keep) / 2, b: (1 - keep) / 2, l: 0, r: 0 }; }
+  });
+  return (
+    <div className="insp-section"><h5>Recadrer l’image</h5>
+      <div className="chips">{CROP_RATIOS.map(([l, r]) => <button key={l} className="chip" onClick={() => preset(r)}>{l}</button>)}</div>
+      <SliderRow label="Gauche" min={0} max={90} unit="%" value={c.l * 100} defaultValue={0} onChange={v => set('l', v)} />
+      <SliderRow label="Droite" min={0} max={90} unit="%" value={c.r * 100} defaultValue={0} onChange={v => set('r', v)} />
+      <SliderRow label="Haut" min={0} max={90} unit="%" value={c.t * 100} defaultValue={0} onChange={v => set('t', v)} />
+      <SliderRow label="Bas" min={0} max={90} unit="%" value={c.b * 100} defaultValue={0} onChange={v => set('b', v)} />
+    </div>
   );
 }
 
@@ -262,9 +292,7 @@ function AudioTab({ clip }: { clip: Clip }) {
         <SliderRow label="Fondu sortie" min={0} max={Math.min(10, clip.durationUs / 2e6)} step={0.1} unit=" s" value={clip.fadeOutUs / 1e6} defaultValue={0} onChange={v => editClip(clip.id, c => { c.fadeOutUs = Math.round(v * 1e6); }, clip.id + ':fo')} />
       </div>
       <NormalizeBox clip={clip} />
-      <div className="insp-section"><h5>Nettoyage <span className="badge">phase 3</span></h5>
-        <div className="hint">Réduire le bruit, améliorer la voix, isoler la voix : traitements locaux prévus en phase 3.</div>
-      </div>
+      <CleanAudioBox clip={clip} />
     </>
   );
 }
@@ -298,12 +326,37 @@ function NormalizeBox({ clip }: { clip: Clip }) {
   );
 }
 
+function CleanAudioBox({ clip }: { clip: Clip }) {
+  const [noise, setNoise] = useState(75);
+  const [enhance, setEnhance] = useState(true);
+  const [busy, setBusy] = useState<number | null>(null);
+  const run = async () => {
+    setBusy(0);
+    try { await cleanAudio(clip.id, { noise: noise / 100, enhance }, setBusy); st().notify('success', 'Son nettoyé'); }
+    catch (e: any) { st().notify('error', e?.message ?? String(e)); }
+    finally { setBusy(null); }
+  };
+  return (
+    <div className="insp-section"><h5>Nettoyer le son {clip.audioAssetId && <span className="badge accent">appliqué</span>}</h5>
+      <SliderRow label="Réduction du bruit" min={0} max={100} unit="%" value={noise} defaultValue={75} onChange={setNoise} />
+      <Switch label="Améliorer la voix (présence + compression)" checked={enhance} onChange={setEnhance} />
+      {busy !== null ? <div className="progress"><div style={{ width: `${busy * 100}%` }} /></div> : (
+        <div className="row">
+          <button className="btn sm primary" onClick={run}>{clip.audioAssetId ? 'Recalculer' : 'Appliquer'}</button>
+          {clip.audioAssetId && <button className="btn sm ghost" onClick={() => resetAudio(clip.id)}>Son d’origine</button>}
+        </div>
+      )}
+      <div className="hint">Traitement local. Le son d’origine est conservé : tu peux revenir en arrière.</div>
+    </div>
+  );
+}
+
 function SpeedTab({ clip }: { clip: Clip }) {
-  const presets = [0.25, 0.5, 1, 1.5, 2, 3, 5];
+  const presets = [0.25, 0.5, 1, 1.5, 2, 3, 5, 10, 20, 50, 100];
   return (
     <>
       <div className="insp-section"><h5>Vitesse</h5>
-        <SliderRow label="Vitesse" min={0.1} max={10} step={0.05} unit="x" value={clip.speed} defaultValue={1}
+        <SliderRow label="Vitesse" min={0.1} max={100} step={0.05} unit="x" value={clip.speed} defaultValue={1}
           onChange={v => st().edit(p => op.setSpeed(p, clip.id, v), { coalesce: clip.id + ':speed' })} />
         <div className="chips">{presets.map(s => <button key={s} className={'chip' + (Math.abs(clip.speed - s) < 1e-6 ? ' on' : '')} onClick={() => st().edit(p => op.setSpeed(p, clip.id, s))}>{s}x</button>)}</div>
         <div className="faint" style={{ fontSize: 'var(--fs-sm)' }}>Durée : {(clip.durationUs / 1e6).toFixed(2)} s · la hauteur de la voix est conservée à l’aperçu.</div>
@@ -392,6 +445,7 @@ function TextEditor({ clip }: { clip: Clip }) {
 }
 
 const FONTS = ['Inter', 'Poppins', 'Montserrat', 'Bebas Neue', 'Anton', 'Oswald', 'Playfair Display', 'Roboto Mono', 'Georgia', 'Arial'];
+const fontName = (file: string) => file.replace(/\.[^.]+$/, '');
 
 function TextStyleEditor({ clipIds, clip }: { clipIds: string[]; clip: Clip }) {
   const s = clip.text!.style;
@@ -401,9 +455,13 @@ function TextStyleEditor({ clipIds, clip }: { clipIds: string[]; clip: Clip }) {
   return (
     <>
       <div className="insp-section"><h5>Police</h5>
-        <select className="input" value={s.font} onChange={e => set({ font: e.target.value }, 'font')} aria-label="Police">
-          {FONTS.map(f => <option key={f} value={f} style={{ fontFamily: f }}>{f}</option>)}
-        </select>
+        <div className="row">
+          <select className="input grow" value={s.font} onChange={e => set({ font: e.target.value }, 'font')} aria-label="Police">
+            <optgroup label="Mes polices">{st().project!.assets.filter(a => a.kind === 'font').map(a => <option key={a.id} value={fontName(a.name)}>{fontName(a.name)}</option>)}</optgroup>
+            <optgroup label="Polices libres">{FONTS.map(f => <option key={f} value={f} style={{ fontFamily: f }}>{f}</option>)}</optgroup>
+          </select>
+          <button className="btn sm" title="Importer une police (.ttf, .otf, .woff)" onClick={async () => { const n = await importFonts(); if (n) set({ font: n }, 'font'); }}>Importer</button>
+        </div>
         <SliderRow label="Taille" min={10} max={300} value={s.size} defaultValue={72} onChange={v => set({ size: v }, 'size')} />
         <div className="row">
           <label className="row"><input type="color" value={s.color} onChange={e => set({ color: e.target.value }, 'color')} aria-label="Couleur du texte" /><span className="muted" style={{ fontSize: 'var(--fs-sm)' }}>Couleur</span></label>

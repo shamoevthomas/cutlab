@@ -114,7 +114,7 @@ export async function exportProject(
   p: Project, s: ExportSettings,
   onProgress: (pr: ExportProgress) => void,
   signal: AbortSignal,
-): Promise<Uint8Array> {
+): Promise<{ data: Uint8Array; audioCodec: 'aac' | 'opus' | null }> {
   const start = s.rangeStartUs ?? 0;
   const end = s.rangeEndUs ?? projectDuration(p);
   if (end <= start) throw new Error('Rien à exporter : la timeline est vide');
@@ -227,7 +227,7 @@ export async function exportProject(
     await venc.flush();
     if (encError) throw encError;
     muxer.finalize();
-    return new Uint8Array(target.buffer);
+    return { data: new Uint8Array(target.buffer), audioCodec: mixed && audioCfg ? audioCfg.mux : null };
   } finally {
     try { venc.close(); } catch { /* closed */ }
     for (const v of [...videos.values(), ...mattes.values()]) { v.removeAttribute('src'); v.load(); }

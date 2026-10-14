@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { Blend, Captions, Clapperboard, Film, Image as ImageIcon, Music, Plus, Search, Sliders, Sparkles, Sticker, Type, Upload, Wand2, AlertTriangle, Trash2 } from 'lucide-react';
 import { useStore, Panel } from '../store';
-import { addAssetAtPlayhead, addText, exportSubtitles, importFiles, importSubtitles, pickAndImport } from '../actions';
+import { addAssetAtPlayhead, addText, exportSubtitles, importFiles, importSubtitles, pickAndImport, relinkAsset } from '../actions';
 import { pickedFromDrop } from './dropFiles';
 import { fmtDur } from './common';
 import { FILTERS, TRANSITIONS } from '../engine/scene';
@@ -121,7 +121,7 @@ function MediaTab({ kind }: { kind: 'visual' | 'audio' }) {
                 <div className={'asset-tile' + (!a.url ? ' missing' : '')} style={a.url && a.thumb ? { backgroundImage: `url(${a.thumb})` } : undefined}
                   draggable={!!a.url} onDragStart={e => e.dataTransfer.setData('application/x-cutlab-asset', a.id)}
                   onDoubleClick={() => a.url && addAssetAtPlayhead(a.id)} title={a.name}>
-                  {!a.url ? <span><AlertTriangle size={14} /><br />Fichier introuvable</span> : !a.thumb && (a.kind === 'image' ? <ImageIcon size={18} /> : <Film size={18} />)}
+                  {!a.url ? <span><AlertTriangle size={14} /><br />Fichier introuvable<br /><button className="btn sm" style={{ marginTop: 4 }} onClick={() => relinkAsset(a.id)}>Reconnecter</button></span> : !a.thumb && (a.kind === 'image' ? <ImageIcon size={18} /> : <Film size={18} />)}
                   {used.has(a.id) && <span className="used">Ajouté</span>}
                   {a.kind === 'video' && <span className="dur mono">{fmtDur(a.durationUs ?? 0)}</span>}
                   {a.url && <button className="add" aria-label={`Ajouter ${a.name}`} title="Ajouter à la tête de lecture" onClick={() => addAssetAtPlayhead(a.id)}><Plus size={14} /></button>}

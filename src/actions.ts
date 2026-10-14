@@ -1,3 +1,4 @@
+import { denoise, encodeWav, gate } from './model/denoise';
 import { integratedLoudness } from './model/loudness';
 import { timelineAudio16k, transcribe, assetSamples, resampleMono, AsrProgress } from './engine/asr';
 import { wordsToCues, fillerRanges, REEL_CUES, LONG_CUES, Word } from './model/captions';
@@ -19,7 +20,20 @@ export async function importFiles(files: PickedFile[], addToTimeline = false): P
   const out: Asset[] = [];
   for (const f of files) {
     try { out.push(await probe(f)); }
-    catch (e: any) { st().notify('error', e?.message ?? `Import impossible : ${f.name}`); }
+    catch (e: any) {
+      const pid = st().project?.id;
+      if (bridge.transcode && pid) {
+        try {
+          st().notify('info', `Conversion de ${f.name} (format non lisible directement)…`);
+          const conv = await bridge.transcode(f.path, pid, null);
+          const a = await probe(conv);
+          a.name = f.name;
+          out.push(a);
+          continue;
+        } catch (e2: any) { st().notify('error', `Import impossible : ${f.name} (${e2?.message ?? e2})`); continue; }
+      }
+      st().notify('error', e?.message ?? `Import impossible : ${f.name}`);
+    }
   }
   if (!out.length) return out;
   st().edit(p => {
@@ -194,7 +208,8 @@ export async function openProject(id: string) {
   const p = await bridge.loadProject(id);
   if (!p) { st().notify('error', 'Projet introuvable'); return; }
   // re-resolve asset urls (media:// on desktop, blob: in the browser)
-  for (const a of p.assets) a.url = (await bridge.resolve(a.path)) ?? '';
+  for (const a of p.assets) a.url = a.path.startsWith('data:') ? a.path : (await bridge.resolve(a.path)) ?? '';
+  for (const a of p.assets) if (a.kind === 'font') registerFont(a);
   st().open(p);
 }
 
@@ -388,4 +403,96 @@ export async function removeBackground(clipId: string, onProgress: (r: number) =
     cc.effects = cc.effects.filter(e => e.kind !== 'matte');
     cc.effects.push({ id: uid(), kind: 'matte', enabled: true, params: { maskAssetId: matte.id, maskStartUs: c.inUs, invert: false } });
   });
+}
+
+// ---------- audio clean-up ----------
+
+/** Voice chain: rumble cut, low-mid cleanup, presence, gentle compression. */
+async function enhanceVoice(chs: Float32Array[], rate: number): Promise<Float32Array[]> {
+  const ctx = new OfflineAudioContext(chs.length, chs[0].length, rate);
+  const buf = ctx.createBuffer(chs.length, chs[0].length, rate);
+  chs.forEach((c, i) => buf.copyToChannel(c, i));
+  const src = ctx.createBufferSource(); src.buffer = buf;
+  const hp = ctx.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = 80;
+  const mud = ctx.createBiquadFilter(); mud.type = 'peaking'; mud.frequency.value = 250; mud.Q.value = 1; mud.gain.value = -2.5;
+  const pres = ctx.createBiquadFilter(); pres.type = 'peaking'; pres.frequency.value = 3200; pres.Q.value = 0.9; pres.gain.value = 3.5;
+  const air = ctx.createBiquadFilter(); air.type = 'highshelf'; air.frequency.value = 9000; air.gain.value = 2;
+  const comp = ctx.createDynamicsCompressor(); comp.threshold.value = -22; comp.ratio.value = 3; comp.attack.value = 0.01; comp.release.value = 0.2; comp.knee.value = 8;
+  const makeup = ctx.createGain(); makeup.gain.value = 1;
+  src.connect(hp).connect(mud).connect(pres).connect(air).connect(comp).connect(makeup).connect(ctx.destination);
+  src.start();
+  const r = await ctx.startRendering();
+  return Array.from({ length: r.numberOfChannels }, (_, i) => r.getChannelData(i));
+}
+
+export async function cleanAudio(clipId: string, o: { noise: number; enhance: boolean }, onProgress: (r: number) => void) {
+  const p = st().project!;
+  const ref = op.findClip(p, clipId);
+  const a = ref && p.assets.find(x => x.id === ref.clip.assetId);
+  if (!ref || !a) throw new Error('Sélectionne un clip avec du son');
+  const buf = await decodeAudio(a);
+  if (!buf) throw new Error('Ce clip n’a pas de son');
+  let chs = Array.from({ length: Math.min(2, buf.numberOfChannels) }, (_, i) => buf.getChannelData(i));
+  // denoise on the raw sound (the noise profile is cleanest there), then the voice chain
+  if (o.noise > 0) {
+    const outs: Float32Array[] = [];
+    for (let i = 0; i < chs.length; i++) outs.push(await denoise(chs[i], { strength: o.noise }, r => onProgress((i + r) / chs.length)));
+    chs = outs;
+  }
+  if (o.enhance) {
+    const before = integratedLoudness(chs, buf.sampleRate);
+    chs = await enhanceVoice(chs, buf.sampleRate);
+    // the browser compressor adds its own make-up gain: bring the level back to where it was
+    const after = integratedLoudness(chs, buf.sampleRate);
+    if (Number.isFinite(before) && Number.isFinite(after)) {
+      const g = Math.pow(10, (before - after) / 20);
+      chs = chs.map(c => c.map(v => v * g));
+    }
+    chs = gate(chs, buf.sampleRate);
+  }
+  onProgress(0.97);
+  const file = await bridge.writeFile(p.id, `audio-${a.id.slice(0, 8)}-${Math.round(o.noise * 100)}${o.enhance ? 'v' : ''}.wav`, encodeWav(chs, buf.sampleRate));
+  const processed: Asset = { id: uid(), kind: 'audio', name: `${a.name} (nettoyé)`, path: file.path, url: file.url, durationUs: Math.round(buf.duration * 1e6), hasAudio: true, derived: 'audio' };
+  st().edit(d => {
+    d.assets.push(processed);
+    const c = op.findClip(d, clipId)!.clip;
+    c.audioAssetId = processed.id;
+  });
+  onProgress(1);
+}
+
+export function resetAudio(clipId: string) {
+  st().edit(d => { const c = op.findClip(d, clipId)?.clip; if (c) delete c.audioAssetId; });
+}
+
+// ---------- fonts & relink ----------
+
+export async function registerFont(a: Asset) {
+  if (a.kind !== 'font' || !a.url) return;
+  const family = a.name.replace(/\.[^.]+$/, '');
+  if ([...document.fonts].some(f => f.family === family || f.family === `"${family}"`)) return;
+  try { const ff = new FontFace(family, `url("${a.url}")`); await ff.load(); document.fonts.add(ff); } catch { /* unreadable font */ }
+}
+
+/** Import font files into the project; returns the family of the first one. */
+export async function importFonts(): Promise<string | null> {
+  const files = await bridge.pickFiles('font');
+  if (!files.length) return null;
+  const assets: Asset[] = files.map(f => ({ id: uid(), kind: 'font', name: f.name, path: f.path, url: f.url, hasAudio: false }));
+  for (const a of assets) await registerFont(a);
+  st().edit(p => { p.assets.push(...assets); });
+  return assets[0].name.replace(/\.[^.]+$/, '');
+}
+
+/** Point a missing asset at a new file (same id: every clip using it comes back). */
+export async function relinkAsset(assetId: string) {
+  const files = await bridge.pickFiles('media');
+  if (!files.length) return;
+  const a = await probe(files[0]);
+  st().edit(p => {
+    const x = p.assets.find(y => y.id === assetId);
+    if (!x) return;
+    Object.assign(x, { path: a.path, url: a.url, width: a.width, height: a.height, durationUs: a.durationUs ?? x.durationUs, thumb: a.thumb, hasAudio: a.hasAudio });
+  });
+  st().notify('success', `${files[0].name} reconnecté`);
 }

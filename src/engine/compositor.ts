@@ -13,12 +13,13 @@ export interface TexSource {
 
 const VS = `#version 300 es
 in vec2 a_pos;
-uniform vec2 u_canvas, u_size, u_center, u_flip;
+uniform vec2 u_canvas, u_size, u_center, u_flip, u_off;
+uniform vec4 u_crop; // l, t, r, b
 uniform float u_rot;
 out vec2 v_uv;
 void main() {
-  v_uv = vec2(a_pos.x + 0.5, 0.5 - a_pos.y);
-  vec2 p = a_pos * u_size * u_flip;
+  v_uv = vec2(mix(u_crop.x, 1.0 - u_crop.z, a_pos.x + 0.5), mix(u_crop.y, 1.0 - u_crop.w, 0.5 - a_pos.y));
+  vec2 p = (a_pos * u_size + u_off) * u_flip;
   float c = cos(u_rot), s = sin(u_rot);
   p = vec2(p.x * c + p.y * s, -p.x * s + p.y * c);   // clockwise rotation in degrees -> radians given
   p += u_center;
@@ -99,7 +100,7 @@ export class Compositor {
     gl.linkProgram(p);
     if (!gl.getProgramParameter(p, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(p) ?? 'link');
     this.prog = p;
-    for (const n of ['u_canvas', 'u_size', 'u_center', 'u_flip', 'u_rot', 'u_tex', 'u_opacity', 'u_wipe', 'u_bright', 'u_contrast', 'u_sat', 'u_expo', 'u_temp', 'u_tint', 'u_vig', 'u_high', 'u_shad', 'u_chroma', 'u_key', 'u_keyInt', 'u_keySoft', 'u_mask', 'u_hasMask', 'u_maskInvert'])
+    for (const n of ['u_canvas', 'u_off', 'u_crop', 'u_size', 'u_center', 'u_flip', 'u_rot', 'u_tex', 'u_opacity', 'u_wipe', 'u_bright', 'u_contrast', 'u_sat', 'u_expo', 'u_temp', 'u_tint', 'u_vig', 'u_high', 'u_shad', 'u_chroma', 'u_key', 'u_keyInt', 'u_keySoft', 'u_mask', 'u_hasMask', 'u_maskInvert'])
       this.u[n] = gl.getUniformLocation(p, n);
     const buf = gl.createBuffer();
     gl.bindBuffer(gl.ARRAY_BUFFER, buf);
@@ -164,7 +165,12 @@ export class Compositor {
         const s = Math.min(this.width / w, this.height / h);
         w *= s; h *= s;
       }
-      gl.uniform2f(this.u.u_size, w * L.scale, h * L.scale);
+      const cr = L.crop;
+      const cw = Math.max(0.01, 1 - cr.l - cr.r), ch = Math.max(0.01, 1 - cr.t - cr.b);
+      gl.uniform4f(this.u.u_crop, cr.l, cr.t, cr.r, cr.b);
+      gl.uniform2f(this.u.u_size, w * L.scale * cw, h * L.scale * ch);
+      // the kept part stays where it was in the uncropped frame
+      gl.uniform2f(this.u.u_off, ((cr.l - cr.r) / 2) * w * L.scale, ((cr.b - cr.t) / 2) * h * L.scale);
       gl.uniform2f(this.u.u_center, L.x * this.width / 2, L.y * this.height / 2);
       gl.uniform2f(this.u.u_flip, L.flipH ? -1 : 1, L.flipV ? -1 : 1);
       gl.uniform1f(this.u.u_rot, (L.rotation * Math.PI) / 180);
