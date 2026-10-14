@@ -1,0 +1,176 @@
+feature,area,priority,original,clone,notes
+Project list with cover name duration,projects,must,yes,yes,S01
+Create project,projects,must,yes,yes,S01
+Rename duplicate delete project,projects,must,yes,yes,S01 menu
+Empty state on home,projects,must,yes,yes,S01
+Autosave and crash recovery,projects,must,yes,yes,backup rotation
+Project settings ratio resolution fps,projects,must,yes,yes,S02
+Adapt canvas to first clip,projects,should,yes,no,S02
+Copy media into project vs link original,projects,should,yes,no,S02
+SDR or HDR colour space,projects,could,yes,no,S02
+Vertical-video workspace layout,projects,could,yes,no,S02
+Import media by button and drag and drop,media,must,yes,yes,S04
+Video image audio format support (mov mp4 hevc prores png jpg heic mp3 wav m4a),media,must,yes,no,ffmpeg decode
+Thumbnails and waveforms generation,media,must,yes,yes,S04 S07
+Proxy media 720p/540p,media,should,yes,no,S21
+Media bin search and sort,media,should,yes,yes,S04
+Smart search by object speech person,media,could,yes,no,needs vision + transcript index
+Scene detection split scenes,media,should,yes,no,clip menu
+Stock video library,media,could,yes,no,free library (Pexels/Pixabay API) instead of CapCut stock
+Favourites and my presets,media,could,yes,no,
+Editor shell with resizable panels,editor,must,yes,yes,S03
+Undo redo for every action,editor,must,yes,yes,
+Customisable keyboard shortcuts,editor,should,yes,partial,S22 + default map from B11; fixed map; editor later
+Preview player play pause step timecode,preview,must,yes,yes,S06
+Preview ratio menu,preview,must,yes,yes,S06
+Preview quality setting,preview,should,yes,no,S06
+Fullscreen preview,preview,should,yes,yes,S06
+On-canvas move scale rotate handles,preview,must,yes,yes,S06
+Guides and safe area axis,preview,should,yes,yes,S
+Trim source in preview before adding,preview,could,yes,no,S06
+Multi-track timeline,timeline,must,yes,yes,S07
+Main track magnet (ripple),timeline,must,yes,yes,P
+Snapping,timeline,must,yes,yes,N
+Linkage audio-video,timeline,should,yes,no,~
+Split at playhead,timeline,must,yes,yes,Cmd+B
+Split all tracks,timeline,should,yes,no,Cmd+Shift+B
+Delete left / right of playhead,timeline,must,yes,yes,Q/W
+Trim clip edges by drag,timeline,must,yes,yes,
+Move clips between tracks,timeline,must,yes,yes,
+Select tool vs blade tool,timeline,should,yes,yes,A/B
+Select left / right of playhead,timeline,could,yes,no,[ ]
+Enable / disable clip,timeline,should,yes,yes,V
+Copy cut paste clips,timeline,must,yes,yes,
+Group / ungroup,timeline,should,yes,no,Cmd+G
+Compound clip,timeline,could,yes,no,Alt+G
+Markers with colours,timeline,should,yes,yes,M
+Track lock hide mute,timeline,should,yes,yes,
+Timeline zoom and zoom to fit,timeline,must,yes,yes,Shift+Z
+JKL shuttle and frame step,timeline,should,yes,yes,
+In / out points,timeline,should,yes,yes,I/O
+Jump to previous / next cut,timeline,should,yes,yes,arrows
+Freeze frame,timeline,should,yes,no,
+Reverse clip,timeline,should,yes,yes,
+Mirror rotate crop with ratio presets,timeline,must,yes,partial,mirror+rotate; crop later
+Replace clip,timeline,could,yes,no,
+Copy / paste attributes,timeline,could,yes,no,
+Record voiceover,timeline,should,yes,no,S24
+Transform position scale rotation flip opacity,video,must,yes,yes,S08 Basic
+Blend modes,video,should,yes,yes,S08
+Canvas background colour blur image,video,should,yes,no,
+Keyframes on transform and sliders,keyframes,must,yes,yes,S08 diamonds
+Keyframe graph with easing and bezier,keyframes,should,yes,no,S12
+Speed normal 0.1x-100x,speed,must,yes,partial,S08 Speed; 0.1x-10x slider (100x model)
+Speed curves presets and custom,speed,should,yes,no,Montage Hero Bullet...
+Optical flow smooth slow motion,speed,could,yes,no,RIFE-type interpolation
+Pitch preserve on speed change,speed,should,yes,yes,
+Add text,text,must,yes,yes,S05b
+Font size colour stroke background shadow,text,must,yes,yes,S09
+Import local fonts,text,must,yes,partial,+ Google Fonts instead of CapCut fonts; 10 Google Fonts; local import later
+Curved text,text,could,yes,no,
+Text bubbles,text,could,yes,no,
+Text effects presets,text,should,yes,yes,own presets
+Text templates,text,should,yes,no,own templates (not CapCut's)
+Text animations in out loop,text,must,yes,yes,own animation set
+Auto captions (speech to text),captions,must,pro,no,Whisper; Pro in CapCut 2026
+Caption language choice,captions,must,yes,no,
+Bilingual / translated captions,captions,should,yes,no,LLM or translation API
+Caption style apply to all,captions,must,yes,partial,multi-select styling
+Caption templates and keyword highlight,captions,should,yes,no,word-level karaoke style
+Caption emojis AI,captions,could,yes,no,
+Speaker identification captions,captions,could,pro,no,diarization
+Manual captions,captions,must,yes,yes,
+Import captions SRT TXT,captions,must,yes,yes,
+Export captions SRT TXT,captions,must,yes,yes,
+Lyrics recognition,captions,could,yes,no,
+Text-to-speech voices,audio,should,pro,no,TTS API (ElevenLabs/OpenAI) or local
+Voice cloning,audio,could,pro?,no,
+Music and SFX library,audio,should,yes,no,free libraries + own files instead of CapCut's
+Extract audio from video,audio,must,yes,yes,
+Volume with dB and fades,audio,must,yes,yes,
+Normalize loudness,audio,must,pro,no,EBU R128 / -14 LUFS
+Noise reduction,audio,must,pro,no,RNNoise/DeepFilterNet
+Enhance voice,audio,should,pro,no,
+Vocal isolation / separate audio,audio,should,pro,no,Demucs
+Voice changer effects,audio,could,pro?,no,
+Auto beat markers,audio,should,yes,no,beat detection
+Auto ducking music under voice,audio,should,unverified,no,our own addition (cheap and useful)
+Filters with intensity,visual,must,yes,yes,own LUT-based set
+Video effects,visual,should,yes,no,own shader set (glitch blur zoom shake...)
+Body effects,visual,could,yes,no,
+Transitions with duration,visual,must,yes,yes,own set (cross dissolve slide zoom whip...)
+Apply transition to all,visual,should,yes,yes,
+Basic colour adjust (exposure contrast saturation temp tint highlights shadows sharpen vignette),color,must,yes,yes,
+HSL 7 channels,color,should,yes,no,
+Curves,color,should,yes,no,
+Colour wheels,color,could,yes,no,
+LUT import cube 3dl,color,should,yes,no,
+Adjustment layers,color,should,yes,no,
+Save colour preset and apply to all,color,should,yes,yes,
+AI colour correction / colour match,color,could,pro,no,
+Masks linear mirror circle rectangle star heart text,visual,should,yes,no,feather invert stroke
+Chroma key,visual,must,yes,yes,
+Background removal auto,ai,must,pro,no,RVM / BiRefNet matting
+Background removal custom brush,ai,should,pro,no,
+Stabilization 3 levels,visual,should,yes,no,ffmpeg vidstab
+Remove flicker,ai,could,pro,no,
+Relight facial ambient creative,ai,could,yes,no,
+Enhance quality / upscale HD UHD,ai,should,pro,no,Real-ESRGAN
+Retouch face and body,ai,could,pro,no,
+Motion tracking for text and stickers,ai,should,yes,no,OpenCV tracker
+Camera tracking face,ai,could,pro,no,
+Auto reframe to 9:16,ai,must,pro,no,face/person tracking crop
+Transcript-based editing,ai,must,yes,no,S13
+Remove filler words pauses repeats,ai,must,pro,no,S13 (key for Thomas)
+Auto cut on beats speech prompt,ai,should,yes,no,S17
+Long video to shorts,ai,should,yes,no,S16 LLM highlight picking
+Video translator with dubbing,ai,could,pro,no,S15 ASR + translate + TTS
+Lip-sync for dubbing,ai,could,pro,no,
+Script to video / AI writer,ai,could,pro?,no,S14 LLM + stock + TTS
+AI avatars presenter,ai,could,pro,no,third-party API
+AI video generation text/image to video,ai,could,pro,no,Veo/Sora/Seedance via official APIs with own keys
+AI image generation and AI design canvas,ai,could,pro,no,S18
+AI stickers,ai,could,yes,no,
+AI music generator,ai,could,yes,no,
+Edit Pilot AI editing assistant,ai,could,yes,no,our LLM agent over the timeline
+Stickers library and GIFs,visual,could,yes,partial,GIPHY official API + own stickers; 12 own shapes; GIPHY later
+Templates browser,templates,could,yes,no,own templates only
+Multicam clip with sync and angle switching,advanced,could,yes,no,S23
+Export resolution up to 4K,export,must,pro?,yes,ffmpeg
+Export fps up to 60,export,must,pro?,yes,
+Export bitrate presets and custom,export,must,yes,yes,
+Export H.264 / HEVC,export,must,yes,yes,VideoToolbox HW encode
+Export MP4 / MOV,export,must,yes,partial,MP4 only; MOV later
+Export range in/out,export,should,yes,yes,
+Export audio only MP3 WAV FLAC,export,should,yes,no,
+Export progress and cancel,export,must,yes,yes,
+Export cover and title,export,should,yes,no,
+No watermark,export,must,pro,yes,never a watermark
+Batch export,export,could,no,no,our own addition (several shorts at once)
+Direct post to YouTube,publish,could,yes,no,YouTube Data API with own key
+Direct post to TikTok,publish,could,yes,no,TikTok Content Posting API with own key
+Settings draft location and cache,settings,should,yes,no,S21
+Hardware encode / decode toggles,settings,should,yes,no,
+Language FR / EN,settings,could,yes,no,
+Cloud space / sync between devices,cloud,could,yes,no,personal sync only
+Share for review links,cloud,could,yes,no,
+CapCut music and sound library,content,skip,yes,skip,licensed and confined to CapCut (MLA §4)
+CapCut stickers fonts effects filters presets,content,skip,yes,skip,CapCut Company Content (ToS §9 / MLA)
+CapCut templates,content,skip,yes,skip,MLA: solely on the Platform
+CapCut stock footage,content,skip,yes,skip,licensed content
+CapCut AI models (Seedance Seedream ASR TTS),content,skip,yes,skip,replaced by open models / own API keys
+TikTok account network,platform,skip,yes,skip,their network
+Sign-in QR / TikTok / Facebook,platform,skip,yes,skip,personal app: no accounts needed
+Paywall diamonds and Pro banners,platform,skip,yes,skip,everything unlocked
+Subscriptions and credits,platform,skip,yes,skip,personal app
+Teams with 30 members and roles,cloud,skip,pro,skip,personal use
+Copyright check,platform,skip,yes,skip,depends on their licensed catalogue
+Forced update and version rollback,platform,skip,yes,skip,
+Brand kit,platform,skip,pro,skip,Teams feature
+Autosave indicator with last save time,projects,must,yes,yes,observed title bar
+Missing media state and relink,media,must,yes,partial,observed red tiles / Media Not Found; state shown; relink button later
+Several timelines per project and sub-projects,projects,could,yes,no,observed Timeline 01 / Sous-projets
+Project details panel when nothing is selected,editor,must,yes,yes,observed Détails + Modifier
+Project cover editor from the main track,projects,could,yes,no,observed pencil before main track
+Record from camera / screen in media tab,media,could,yes,no,observed Enregistrer
+Recent / favourites (Les tiennes) per asset tab,media,should,yes,partial,observed; project media only
