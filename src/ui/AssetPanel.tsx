@@ -62,7 +62,7 @@ function MediaTab({ kind }: { kind: 'visual' | 'audio' }) {
   const [over, setOver] = useState(false);
   const [sub, setSub] = useState<'all' | 'video' | 'image'>('all');
   const used = useMemo(() => new Set(project.tracks.flatMap(t => t.clips.map(c => c.assetId))), [project.tracks]);
-  const assets = project.assets.filter(a => (kind === 'audio' ? a.kind === 'audio' : a.kind === 'video' || a.kind === 'image'))
+  const assets = project.assets.filter(a => !a.derived).filter(a => (kind === 'audio' ? a.kind === 'audio' : a.kind === 'video' || a.kind === 'image'))
     .filter(a => sub === 'all' || a.kind === sub)
     .filter(a => a.name.toLowerCase().includes(q.toLowerCase()));
 

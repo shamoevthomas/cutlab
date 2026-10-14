@@ -29,6 +29,9 @@ const FS = `#version 300 es
 precision highp float;
 in vec2 v_uv;
 uniform sampler2D u_tex;
+uniform sampler2D u_mask;
+uniform int u_hasMask;
+uniform int u_maskInvert;
 uniform float u_opacity, u_wipe;
 uniform float u_bright, u_contrast, u_sat, u_expo, u_temp, u_tint, u_vig, u_high, u_shad;
 uniform int u_chroma;
@@ -42,6 +45,7 @@ void main() {
   vec4 t = texture(u_tex, v_uv);
   vec3 c = t.rgb;
   float a = t.a;
+  if (u_hasMask == 1) { float m = texture(u_mask, v_uv).r; a *= u_maskInvert == 1 ? 1.0 - m : m; }
   if (u_chroma == 1) {
     float d = distance(cbcr(c), cbcr(u_key));
     float thr = 0.02 + u_keyInt * 0.25;
@@ -95,7 +99,7 @@ export class Compositor {
     gl.linkProgram(p);
     if (!gl.getProgramParameter(p, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(p) ?? 'link');
     this.prog = p;
-    for (const n of ['u_canvas', 'u_size', 'u_center', 'u_flip', 'u_rot', 'u_tex', 'u_opacity', 'u_wipe', 'u_bright', 'u_contrast', 'u_sat', 'u_expo', 'u_temp', 'u_tint', 'u_vig', 'u_high', 'u_shad', 'u_chroma', 'u_key', 'u_keyInt', 'u_keySoft'])
+    for (const n of ['u_canvas', 'u_size', 'u_center', 'u_flip', 'u_rot', 'u_tex', 'u_opacity', 'u_wipe', 'u_bright', 'u_contrast', 'u_sat', 'u_expo', 'u_temp', 'u_tint', 'u_vig', 'u_high', 'u_shad', 'u_chroma', 'u_key', 'u_keyInt', 'u_keySoft', 'u_mask', 'u_hasMask', 'u_maskInvert'])
       this.u[n] = gl.getUniformLocation(p, n);
     const buf = gl.createBuffer();
     gl.bindBuffer(gl.ARRAY_BUFFER, buf);
@@ -133,7 +137,7 @@ export class Compositor {
     return t.tex;
   }
 
-  render(background: string, layers: Layer[], source: (L: Layer) => TexSource | null) {
+  render(background: string, layers: Layer[], source: (L: Layer) => TexSource | null, maskSource?: (L: Layer) => TexSource | null) {
     const gl = this.gl;
     this.frame++;
     gl.viewport(0, 0, this.width, this.height);
@@ -144,10 +148,16 @@ export class Compositor {
     gl.enable(gl.BLEND);
     gl.uniform2f(this.u.u_canvas, this.width, this.height);
     gl.uniform1i(this.u.u_tex, 0);
+    gl.uniform1i(this.u.u_mask, 1);
     gl.activeTexture(gl.TEXTURE0);
     for (const L of layers) {
       const src = source(L);
       if (!src || !src.w || !src.h) continue;
+      const mask = L.matte && maskSource ? maskSource(L) : null;
+      if (L.matte && !mask) continue; // wait for the matte frame rather than flash the background
+      if (mask) { gl.activeTexture(gl.TEXTURE1); this.texture(mask); gl.activeTexture(gl.TEXTURE0); }
+      gl.uniform1i(this.u.u_hasMask, mask ? 1 : 0);
+      gl.uniform1i(this.u.u_maskInvert, L.matte?.invert ? 1 : 0);
       this.texture(src);
       let w = src.w, h = src.h;
       if (src.fit === 'contain') {

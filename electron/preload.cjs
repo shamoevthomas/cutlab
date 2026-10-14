@@ -11,6 +11,7 @@ contextBridge.exposeInMainWorld('cutlab', {
   resolve: (p) => ipcRenderer.invoke('files:resolve', p),
   readText: (p) => ipcRenderer.invoke('files:readText', p),
   saveExport: (name, data) => ipcRenderer.invoke('export:save', name, data),
+  writeFile: (id, name, data) => ipcRenderer.invoke('files:write', id, name, data),
   reveal: (p) => ipcRenderer.send('files:reveal', p),
   /** Absolute path of a File dropped from Finder. */
   pathForFile: (f) => webUtils.getPathForFile(f),

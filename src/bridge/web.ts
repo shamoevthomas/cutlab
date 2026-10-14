@@ -85,6 +85,9 @@ export const webBridge: Bridge = {
     if (!url) throw new Error('fichier introuvable');
     return (await fetch(url)).text();
   },
+  async writeFile(_projectId, name, data) {
+    return storeFile(new File([data], name, { type: name.endsWith('.mp4') ? 'video/mp4' : name.endsWith('.wav') ? 'audio/wav' : '' }));
+  },
   async saveExport(name, data) {
     const blob = new Blob([data], { type: name.endsWith('.mp4') ? 'video/mp4' : 'application/octet-stream' });
     const a = document.createElement('a');

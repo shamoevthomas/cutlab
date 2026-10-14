@@ -16,6 +16,7 @@ export interface Layer {
   adjust: Adjust;
   chroma: { on: boolean; color: [number, number, number]; intensity: number; shadow: number };
   blend: Clip['blend'];
+  matte?: { assetId: string; offsetUs: number; invert: boolean };
 }
 
 export interface Adjust {
@@ -55,6 +56,11 @@ function adjustOf(c: Clip): Adjust {
   return out;
 }
 
+function matteOf(c: Clip): Layer['matte'] {
+  const e = c.effects.find(x => x.kind === 'matte' && x.enabled);
+  return e ? { assetId: String(e.params.maskAssetId), offsetUs: Number(e.params.maskStartUs ?? 0), invert: !!e.params.invert } : undefined;
+}
+
 function chromaOf(c: Clip): Layer['chroma'] {
   const e = c.effects.find(x => x.kind === 'chroma' && x.enabled);
   if (!e) return { on: false, color: [0, 1, 0], intensity: 0, shadow: 0 };
@@ -83,7 +89,7 @@ function baseLayer(track: Track, c: Clip, t: Us, kind: Layer['kind']): Layer {
     x: valueAt(c, 'x', rel), y: valueAt(c, 'y', rel), scale: valueAt(c, 'scale', rel),
     rotation: valueAt(c, 'rotation', rel), opacity: valueAt(c, 'opacity', rel),
     flipH: c.transform.flipH, flipV: c.transform.flipV, wipe: 0,
-    adjust: adjustOf(c), chroma: chromaOf(c), blend: c.blend,
+    adjust: adjustOf(c), chroma: chromaOf(c), blend: c.blend, matte: matteOf(c),
   };
   const d = Math.min(c.animDurUs, c.durationUs / 2);
   if (c.animIn !== 'none' && rel < d) applyAnim(L, c.animIn, rel / d);

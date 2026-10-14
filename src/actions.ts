@@ -1,3 +1,4 @@
+import { integratedLoudness } from './model/loudness';
 import { timelineAudio16k, transcribe, assetSamples, resampleMono, AsrProgress } from './engine/asr';
 import { wordsToCues, fillerRanges, REEL_CUES, LONG_CUES, Word } from './model/captions';
 import { detectSilences, autoThreshold, rmsDb } from './model/silence';
@@ -300,4 +301,91 @@ function mergeRanges(r: [number, number][]): [number, number][] {
 export function applyAutoCut(plans: CutPlan[]) {
   st().edit(d => { for (const pl of plans) op.cutSourceRanges(d, pl.clipId, pl.removeSrc); });
   st().select([]);
+}
+
+// ---------- loudness ----------
+
+/** Set each clip's volume so its loudness hits the target (LUFS). Returns the measured values. */
+export async function normalizeClips(clipIds: string[], target: number): Promise<{ id: string; measured: number; gainDb: number }[]> {
+  const p = st().project!;
+  const out: { id: string; measured: number; gainDb: number }[] = [];
+  for (const id of clipIds) {
+    const ref = op.findClip(p, id);
+    const a = ref && p.assets.find(x => x.id === ref.clip.assetId);
+    if (!ref || !a) continue;
+    const buf = await decodeAudio(a);
+    if (!buf) continue;
+    const c = ref.clip;
+    const s0 = Math.floor((c.inUs / 1e6) * buf.sampleRate), s1 = Math.ceil(((c.inUs + c.durationUs * c.speed) / 1e6) * buf.sampleRate);
+    const chans = Array.from({ length: Math.min(2, buf.numberOfChannels) }, (_, i) => buf.getChannelData(i).subarray(s0, s1));
+    const measured = integratedLoudness(chans, buf.sampleRate);
+    if (!Number.isFinite(measured)) continue;
+    const gainDb = Math.max(-60, Math.min(20, Math.round((target - measured) * 10) / 10));
+    out.push({ id, measured, gainDb });
+  }
+  st().edit(d => { for (const r of out) { const ref = op.findClip(d, r.id); if (ref) { ref.clip.volumeDb = r.gainDb; ref.clip.keyframes = ref.clip.keyframes.filter(k => k.property !== 'volumeDb'); } } });
+  return out;
+}
+
+// ---------- phase 3: auto-reframe & background removal ----------
+
+export type ReframeSpeed = 'slow' | 'normal' | 'fast';
+
+/** Fill the canvas with the clip and animate X so the main face stays centred. */
+export async function autoReframe(clipId: string, o: { speed: ReframeSpeed; zoom: number }, onProgress: (r: number) => void) {
+  const { trackFaces, smoothPath } = await import('./engine/vision');
+  const p = st().project!;
+  const ref = op.findClip(p, clipId);
+  const a = ref && p.assets.find(x => x.id === ref.clip.assetId);
+  if (!ref || !a || a.kind !== 'video' || !a.width || !a.height) throw new Error('Sélectionne un clip vidéo');
+  const c = ref.clip;
+  const s0 = c.inUs / 1e6, s1 = (c.inUs + c.durationUs * c.speed) / 1e6;
+  const step = 0.25;
+  const samples = await trackFaces(a.url, s0, s1, step, onProgress);
+  if (!samples.some(s => s.found)) throw new Error('Aucun visage détecté dans ce clip');
+  const xs = smoothPath(samples, { slow: 0.92, normal: 0.8, fast: 0.55 }[o.speed]);
+  const W = p.canvas.width, H = p.canvas.height;
+  const contain = Math.min(W / a.width, H / a.height), cover = Math.max(W / a.width, H / a.height);
+  const scale = (cover / contain) * o.zoom;
+  const shownW = a.width * contain * scale;
+  const maxOff = Math.max(0, (shownW - W) / 2);
+  st().edit(d => {
+    const cc = op.findClip(d, clipId)!.clip;
+    cc.keyframes = cc.keyframes.filter(k => k.property !== 'x' && k.property !== 'scale');
+    cc.transform.scale = scale;
+    cc.transform.y = 0;
+    let lastX = Infinity;
+    samples.forEach((s, i) => {
+      const off = Math.max(-maxOff, Math.min(maxOff, -(xs[i] - 0.5) * shownW));
+      const x = off / (W / 2);
+      const rel = Math.round(((s.t - s0) / c.speed) * 1e6);
+      if (rel < 0 || rel > cc.durationUs) return;
+      // keep only keyframes that move the frame noticeably (≥ 0.5 % of the width)
+      if (Math.abs(x - lastX) < 0.01 && i !== samples.length - 1) return;
+      cc.keyframes.push({ id: uid(), property: 'x', tUs: rel, value: x, easing: 'easeInOut' });
+      lastX = x;
+    });
+    if (!cc.keyframes.some(k => k.property === 'x')) cc.transform.x = 0;
+  });
+  return samples.filter(s => s.found).length / samples.length;
+}
+
+/** Person segmentation → matte video stored with the project → used as the clip's alpha. */
+export async function removeBackground(clipId: string, onProgress: (r: number) => void, signal?: AbortSignal) {
+  const { renderMatte } = await import('./engine/vision');
+  const p = st().project!;
+  const ref = op.findClip(p, clipId);
+  const a = ref && p.assets.find(x => x.id === ref.clip.assetId);
+  if (!ref || !a || a.kind !== 'video') throw new Error('Sélectionne un clip vidéo');
+  const c = ref.clip;
+  const s0 = c.inUs / 1e6, s1 = (c.inUs + c.durationUs * c.speed) / 1e6;
+  const { data, width, height } = await renderMatte(a.url, s0, s1, Math.min(30, p.fps), onProgress, signal);
+  const file = await bridge.writeFile(p.id, `matte-${a.id.slice(0, 8)}-${Math.round(s0 * 1000)}.mp4`, data);
+  const matte: Asset = { id: uid(), kind: 'video', name: `Détourage ${a.name}`, path: file.path, url: file.url, width, height, durationUs: Math.round((s1 - s0) * 1e6), hasAudio: false, derived: 'matte' };
+  st().edit(d => {
+    d.assets.push(matte);
+    const cc = op.findClip(d, clipId)!.clip;
+    cc.effects = cc.effects.filter(e => e.kind !== 'matte');
+    cc.effects.push({ id: uid(), kind: 'matte', enabled: true, params: { maskAssetId: matte.id, maskStartUs: c.inUs, invert: false } });
+  });
 }

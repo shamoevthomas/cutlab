@@ -88,7 +88,7 @@ Voice cloning,audio,could,pro?,no,
 Music and SFX library,audio,should,yes,no,free libraries + own files instead of CapCut's
 Extract audio from video,audio,must,yes,yes,
 Volume with dB and fades,audio,must,yes,yes,
-Normalize loudness,audio,must,pro,no,EBU R128 / -14 LUFS
+Normalize loudness,audio,must,pro,yes,BS.1770 integrated loudness → clip gain
 Noise reduction,audio,must,pro,no,RNNoise/DeepFilterNet
 Enhance voice,audio,should,pro,no,
 Vocal isolation / separate audio,audio,should,pro,no,Demucs
@@ -110,7 +110,7 @@ Save colour preset and apply to all,color,should,yes,yes,
 AI colour correction / colour match,color,could,pro,no,
 Masks linear mirror circle rectangle star heart text,visual,should,yes,no,feather invert stroke
 Chroma key,visual,must,yes,yes,
-Background removal auto,ai,must,pro,no,RVM / BiRefNet matting
+Background removal auto,ai,must,pro,yes,"MediaPipe selfie segmenter → matte video, local"
 Background removal custom brush,ai,should,pro,no,
 Stabilization 3 levels,visual,should,yes,no,ffmpeg vidstab
 Remove flicker,ai,could,pro,no,
@@ -118,8 +118,8 @@ Relight facial ambient creative,ai,could,yes,no,
 Enhance quality / upscale HD UHD,ai,should,pro,no,Real-ESRGAN
 Retouch face and body,ai,could,pro,no,
 Motion tracking for text and stickers,ai,should,yes,no,OpenCV tracker
-Camera tracking face,ai,could,pro,no,
-Auto reframe to 9:16,ai,must,pro,no,face/person tracking crop
+Camera tracking face,ai,could,pro,partial,via auto reframe
+Auto reframe to 9:16,ai,must,pro,yes,MediaPipe face detection → smoothed X keyframes
 Transcript-based editing,ai,must,yes,partial,auto-cut dialog; text editor view later
 Remove filler words pauses repeats,ai,must,pro,partial,"pauses: RMS detection; fillers/repeats via Whisper (Whisper tends to drop ""euh"")"
 Auto cut on beats speech prompt,ai,should,yes,partial,speech pauses only

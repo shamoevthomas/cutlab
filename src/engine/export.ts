@@ -164,6 +164,7 @@ export async function exportProject(
   // the compositor maps project-space layers to the output size: scale positions/sizes with the canvas
   const scaleProj: Project = { ...p, canvas: { ...p.canvas, width: W, height: H } };
   const videos = new Map<string, HTMLVideoElement>();
+  const mattes = new Map<string, HTMLVideoElement>();
   const images = new Map<string, HTMLImageElement>();
   const assetOf = (id?: string) => p.assets.find(a => a.id === id) as Asset | undefined;
 
@@ -183,6 +184,12 @@ export async function exportProject(
           let v = videos.get(L.clip.id);
           if (!v) { v = await loadVideo(a.url); videos.set(L.clip.id, v); }
           await seekVideo(v, L.sourceUs / 1e6 + 0.0005);
+          if (L.matte) {
+            const ma = assetOf(L.matte.assetId);
+            let mv = mattes.get(L.clip.id);
+            if (!mv && ma) { mv = await loadVideo(ma.url); mattes.set(L.clip.id, mv); }
+            if (mv) await seekVideo(mv, (L.sourceUs - L.matte.offsetUs) / 1e6 + 0.0005);
+          }
         } else if ((L.kind === 'image' || L.kind === 'sticker') && !images.has(a.id)) {
           images.set(a.id, await loadImage(a.url));
         }
@@ -205,7 +212,11 @@ export async function exportProject(
         const k = a!.kind === 'sticker' ? W / p.canvas.width : 1;
         return { el: img, w: img.naturalWidth * k, h: img.naturalHeight * k, key: 'img:' + a!.id, dynamic: false, fit: a!.kind === 'sticker' ? 'natural' : 'contain' };
       };
-      comp.render(p.canvas.background, layers, source);
+      const maskSource = (L: Layer): TexSource | null => {
+        const mv = mattes.get(L.clip.id);
+        return mv ? { el: mv, w: mv.videoWidth, h: mv.videoHeight, key: 'm:' + L.clip.id, dynamic: true, fit: 'contain' } : null;
+      };
+      comp.render(p.canvas.background, layers, source, maskSource);
       const frame = new VideoFrame(canvas, { timestamp: Math.round(f * frameDur), duration: Math.round(frameDur) });
       venc.encode(frame, { keyFrame: f % (s.fps * 2) === 0 });
       frame.close();
@@ -219,7 +230,7 @@ export async function exportProject(
     return new Uint8Array(target.buffer);
   } finally {
     try { venc.close(); } catch { /* closed */ }
-    for (const v of videos.values()) { v.removeAttribute('src'); v.load(); }
+    for (const v of [...videos.values(), ...mattes.values()]) { v.removeAttribute('src'); v.load(); }
     comp.dispose();
   }
 }

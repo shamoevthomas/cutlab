@@ -18,6 +18,8 @@ export interface Bridge {
   resolve(path: string): Promise<string | null>;
   readText(path: string): Promise<string>;
   saveExport(suggestedName: string, data: Uint8Array): Promise<string | null>;
+  /** Write a generated file (matte, processed audio…) into the project's cache folder. */
+  writeFile(projectId: string, name: string, data: Uint8Array): Promise<PickedFile>;
   reveal?(path: string): void;
   projectFolder?(id: string): Promise<string>;
 }

@@ -66,8 +66,8 @@ export class Player {
     this.needsRender = true;
   }
 
-  private element(p: Project, clip: Clip, asset: Asset): HTMLMediaElement {
-    let m = this.els.get(clip.id);
+  private element(p: Project, clip: Clip, asset: Asset, key = clip.id): HTMLMediaElement {
+    let m = this.els.get(key);
     if (!m || m.assetId !== asset.id) {
       if (m) { m.el.pause(); m.el.removeAttribute('src'); }
       const el = asset.kind === 'audio' ? document.createElement('audio') : document.createElement('video');
@@ -80,11 +80,11 @@ export class Player {
       el.addEventListener('error', () => { this.missing.add(asset.id); this.onMissing?.(this.missing); });
       if ('requestVideoFrameCallback' in el) {
         const v = el as HTMLVideoElement;
-        const tick = () => { this.needsRender = true; if (this.els.get(clip.id)?.el === v) v.requestVideoFrameCallback(tick); };
+        const tick = () => { this.needsRender = true; if (this.els.get(key)?.el === v) v.requestVideoFrameCallback(tick); };
         v.requestVideoFrameCallback(tick);
       }
       m = { el, lastUse: performance.now(), assetId: asset.id };
-      this.els.set(clip.id, m);
+      this.els.set(key, m);
     }
     m.lastUse = performance.now();
     return m.el;
@@ -123,6 +123,24 @@ export class Player {
         if (!visibleSoon) continue;
         if (track.kind !== 'audio' && track.hidden && !audible.has(c.id)) continue;
         active.add(c.id);
+        const matte = c.effects.find(e => e.kind === 'matte' && e.enabled);
+        const mAsset = matte && p.assets.find(a => a.id === matte.params.maskAssetId);
+        if (mAsset) {
+          const key = c.id + ':matte';
+          active.add(key);
+          const me = this.element(p, c, mAsset, key);
+          me.muted = true;
+          const mt = (sourceTimeAt(c, Math.max(t, c.startUs)) - Number(matte!.params.maskStartUs ?? 0)) / 1e6;
+          const inside0 = t >= c.startUs && t < clipEnd(c);
+          if (playing && inside0 && !c.reverse) {
+            me.playbackRate = Math.min(16, Math.max(0.0625, c.speed));
+            if (Math.abs(me.currentTime - mt) > DRIFT_S * Math.max(1, c.speed)) me.currentTime = mt;
+            if (me.paused) me.play().catch(() => {});
+          } else {
+            if (!me.paused) me.pause();
+            if (me.readyState >= 1 && Math.abs(me.currentTime - mt) > 0.5 / p.fps) me.currentTime = mt;
+          }
+        }
         const el = this.element(p, c, asset);
         const m = this.els.get(c.id)!;
         const inside = t >= c.startUs && t < clipEnd(c);
@@ -179,6 +197,13 @@ export class Player {
     return { el: img, w: img.naturalWidth, h: img.naturalHeight, key: 'img:' + asset.id, dynamic: false, fit: asset.kind === 'sticker' ? 'natural' : 'contain' };
   };
 
+  maskSource = (L: Layer): TexSource | null => {
+    const m = this.els.get(L.clip.id + ':matte');
+    const v = m?.el as HTMLVideoElement | undefined;
+    if (!v || v.readyState < 2 || !v.videoWidth) return null;
+    return { el: v, w: v.videoWidth, h: v.videoHeight, key: 'm:' + L.clip.id, dynamic: true, fit: 'contain' };
+  };
+
   private loop() {
     this.raf = requestAnimationFrame(this.loop);
     const s = useStore.getState();
@@ -196,7 +221,7 @@ export class Player {
     this.syncMedia(p, t, s.playing);
     if (!this.needsRender) return;
     this.needsRender = false;
-    this.comp.render(p.canvas.background, evaluate(p, t), this.source);
+    this.comp.render(p.canvas.background, evaluate(p, t), this.source, this.maskSource);
   }
 
   /** JPEG of the current frame (project cover). */

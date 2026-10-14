@@ -7,6 +7,8 @@ import { uid, RATIOS } from '../model/schema';
 import { SliderRow, Switch } from './common';
 import { FILTERS, neutralAdjust } from '../engine/scene';
 import { bridge } from '../bridge';
+import { normalizeClips, autoReframe, removeBackground, ReframeSpeed } from '../actions';
+import { LOUDNESS_TARGETS } from '../model/loudness';
 
 type Tab = 'basic' | 'text' | 'anim' | 'speed' | 'audio' | 'adjust' | 'chroma';
 
@@ -171,8 +173,66 @@ function BasicTab({ clip }: { clip: Clip }) {
           </select>
         </label>
       </div>
+      <ReframeBox clip={clip} />
       <div className="hint">◆ pose une image clé à la tête de lecture : la valeur s’anime entre deux images clés.</div>
     </>
+  );
+}
+
+function ReframeBox({ clip }: { clip: Clip }) {
+  const project = useStore(s => s.project)!;
+  const asset = project.assets.find(a => a.id === clip.assetId);
+  const [speed, setSpeed] = useState<ReframeSpeed>('normal');
+  const [zoom, setZoom] = useState(1);
+  const [busy, setBusy] = useState<number | null>(null);
+  if (asset?.kind !== 'video') return null;
+  const portrait = project.canvas.height > project.canvas.width;
+  const run = async (to916: boolean) => {
+    if (to916) st().edit(p => { p.canvas.width = 1080; p.canvas.height = 1920; });
+    setBusy(0);
+    try {
+      const found = await autoReframe(clip.id, { speed, zoom }, setBusy);
+      st().notify('success', `Recadré : visage suivi sur ${Math.round(found * 100)} % du clip`);
+    } catch (e: any) { st().notify('error', e?.message ?? String(e)); }
+    finally { setBusy(null); }
+  };
+  return (
+    <div className="insp-section"><h5>Recadrage auto (suit le visage)</h5>
+      <div className="chips">{(['slow', 'normal', 'fast'] as const).map(s => <button key={s} className={'chip' + (speed === s ? ' on' : '')} onClick={() => setSpeed(s)}>{{ slow: 'Caméra calme', normal: 'Normale', fast: 'Réactive' }[s]}</button>)}</div>
+      <SliderRow label="Zoom" min={100} max={160} unit="%" value={zoom * 100} defaultValue={100} onChange={v => setZoom(v / 100)} />
+      {busy !== null ? <div className="progress"><div style={{ width: `${busy * 100}%` }} /></div> : (
+        <div className="row">
+          <button className="btn sm primary" onClick={() => run(false)}>Recadrer</button>
+          {!portrait && <button className="btn sm" onClick={() => run(true)}>Passer en 9:16 et recadrer</button>}
+        </div>
+      )}
+      <div className="hint">Remplit le cadre et crée des images clés de position : tu peux les retoucher ensuite.</div>
+    </div>
+  );
+}
+
+function BgRemovalBox({ clip }: { clip: Clip }) {
+  const project = useStore(s => s.project)!;
+  const asset = project.assets.find(a => a.id === clip.assetId);
+  const e = clip.effects.find(x => x.kind === 'matte');
+  const [busy, setBusy] = useState<number | null>(null);
+  if (asset?.kind !== 'video') return null;
+  const run = async () => {
+    setBusy(0);
+    try { await removeBackground(clip.id, setBusy); st().notify('success', 'Arrière-plan supprimé'); }
+    catch (err: any) { st().notify('error', err?.message ?? String(err)); }
+    finally { setBusy(null); }
+  };
+  return (
+    <div className="insp-section"><h5>Suppression de l’arrière-plan (IA)</h5>
+      {busy !== null ? <><div className="faint" style={{ fontSize: 'var(--fs-sm)' }}>Détourage image par image… {Math.round(busy * 100)} %</div><div className="progress"><div style={{ width: `${busy * 100}%` }} /></div></>
+        : e ? <>
+          <Switch label="Activé" checked={e.enabled} onChange={v => editClip(clip.id, c => { const x = c.effects.find(y => y.kind === 'matte'); if (x) x.enabled = v; })} />
+          <Switch label="Inverser (garder le fond)" checked={!!e.params.invert} onChange={v => editClip(clip.id, c => { const x = c.effects.find(y => y.kind === 'matte'); if (x) x.params.invert = v; })} />
+          <button className="btn sm ghost" onClick={run}>Recalculer</button>
+        </> : <button className="btn sm primary" onClick={run}>Supprimer l’arrière-plan</button>}
+      <div className="hint">Modèle local (aucun envoi en ligne). Place une image ou une vidéo sur une piste en dessous pour remplacer le fond.</div>
+    </div>
   );
 }
 
@@ -201,10 +261,40 @@ function AudioTab({ clip }: { clip: Clip }) {
         <SliderRow label="Fondu entrée" min={0} max={Math.min(10, clip.durationUs / 2e6)} step={0.1} unit=" s" value={clip.fadeInUs / 1e6} defaultValue={0} onChange={v => editClip(clip.id, c => { c.fadeInUs = Math.round(v * 1e6); }, clip.id + ':fi')} />
         <SliderRow label="Fondu sortie" min={0} max={Math.min(10, clip.durationUs / 2e6)} step={0.1} unit=" s" value={clip.fadeOutUs / 1e6} defaultValue={0} onChange={v => editClip(clip.id, c => { c.fadeOutUs = Math.round(v * 1e6); }, clip.id + ':fo')} />
       </div>
+      <NormalizeBox clip={clip} />
       <div className="insp-section"><h5>Nettoyage <span className="badge">phase 3</span></h5>
-        <div className="hint">Normaliser le volume (−14 LUFS), réduire le bruit, améliorer la voix, isoler la voix : traitements locaux prévus en phase 3.</div>
+        <div className="hint">Réduire le bruit, améliorer la voix, isoler la voix : traitements locaux prévus en phase 3.</div>
       </div>
     </>
+  );
+}
+
+function NormalizeBox({ clip }: { clip: Clip }) {
+  const [target, setTarget] = useState(-14);
+  const [busy, setBusy] = useState(false);
+  const [last, setLast] = useState<string | null>(null);
+  const run = async (all: boolean) => {
+    setBusy(true);
+    const p = st().project!;
+    const ids = all ? p.tracks.filter(t => t.kind === 'video' || t.kind === 'audio').flatMap(t => t.clips.filter(c => c.assetId).map(c => c.id)) : [clip.id];
+    try {
+      const r = await normalizeClips(ids, target);
+      const mine = r.find(x => x.id === clip.id);
+      setLast(mine ? `Mesuré ${mine.measured.toFixed(1)} LUFS → gain ${mine.gainDb > 0 ? '+' : ''}${mine.gainDb} dB` : 'Pas de son mesurable');
+      if (all) st().notify('success', `${r.length} clips normalisés à ${target} LUFS`);
+    } finally { setBusy(false); }
+  };
+  return (
+    <div className="insp-section"><h5>Normaliser le volume</h5>
+      <select className="input" value={target} onChange={e => setTarget(Number(e.target.value))} aria-label="Cible de volume">
+        {LOUDNESS_TARGETS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+      </select>
+      <div className="row">
+        <button className="btn sm primary" disabled={busy} onClick={() => run(false)}>{busy ? 'Mesure…' : 'Normaliser ce clip'}</button>
+        <button className="btn sm" disabled={busy} onClick={() => run(true)}>Tous les clips</button>
+      </div>
+      {last && <div className="faint" style={{ fontSize: 'var(--fs-sm)' }}>{last}</div>}
+    </div>
   );
 }
 
@@ -284,9 +374,7 @@ function ChromaTab({ clip }: { clip: Clip }) {
           <SliderRow label="Adoucir" min={0} max={100} value={Number(e!.params.shadow)} defaultValue={20} onChange={v => setEffectParam(clip.id, 'chroma', 'shadow', v)} />
         </>}
       </div>
-      <div className="insp-section"><h5>Suppression du fond par IA <span className="badge">phase 3</span></h5>
-        <div className="hint">Détourage automatique sans fond vert (modèle local sur ton Mac).</div>
-      </div>
+      <BgRemovalBox clip={clip} />
     </>
   );
 }

@@ -121,6 +121,11 @@ function registerIpc() {
     await fsp.writeFile(r.filePath, Buffer.from(data));
     return r.filePath;
   });
+  ipcMain.handle('files:write', async (_e, id, name, data) => {
+    const file = path.join(projectDir(id), 'cache', path.basename(name));
+    await atomicWrite(file, Buffer.from(data));
+    return { name: path.basename(file), path: file, url: toUrl(file), mime: MIME[path.extname(file).toLowerCase()] || '', size: data.byteLength };
+  });
   ipcMain.on('files:reveal', (_e, p) => shell.showItemInFolder(p));
 }
 
