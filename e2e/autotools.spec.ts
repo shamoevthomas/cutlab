@@ -48,7 +48,7 @@ test('auto-cut silences then auto captions (Whisper base, local)', async () => {
 
   // --- sous-titres auto
   await page.getByRole('tab', { name: 'Sous-titres' }).click();
-  await page.getByRole('button', { name: 'Générer les sous-titres' }).click();
+  await page.getByRole('button', { name: 'Générer' }).click();
   await expect.poll(async () => (await state()).tracks.filter((t: any) => t.role === 'captions').flatMap((t: any) => t.clips).length, { timeout: 480_000, intervals: [2000] }).toBeGreaterThan(2);
   const caps = (await state()).tracks.filter((t: any) => t.role === 'captions').flatMap((t: any) => t.clips);
   console.log('captions:', caps.map((c: any) => `[${(c.startUs / 1e6).toFixed(2)}] ${c.text.content}`).join(' | '));
@@ -57,4 +57,16 @@ test('auto-cut silences then auto captions (Whisper base, local)', async () => {
   await page.evaluate((t) => (window as any).__cutlab.getState().seek(t), caps[1].startUs + 100_000);
   await page.waitForTimeout(800);
   await page.screenshot({ path: `${SHOTS}/08-auto-captions.png` });
+
+  // --- bilingual: French + English line (local opus-mt), replacing the previous captions
+  await page.getByLabel('Sous-titres bilingues').selectOption('en');
+  await page.getByRole('button', { name: 'Générer' }).click();
+  await expect.poll(async () => (await state()).tracks.filter((t: any) => t.role === 'captions').flatMap((t: any) => t.clips).filter((c: any) => c.text.content.includes('\n')).length, { timeout: 300_000, intervals: [2000] }).toBeGreaterThan(2);
+  const bi = (await state()).tracks.filter((t: any) => t.role === 'captions').flatMap((t: any) => t.clips);
+  console.log('bilingual:', bi.map((c: any) => c.text.content.replace('\n', ' / ')).join(' | '));
+  expect(bi.every((c: any) => c.text.content.includes('\n'))).toBe(true);   // old captions were replaced
+  expect(bi.map((c: any) => c.text.content.split('\n')[1]).join(' ').toLowerCase()).toMatch(/\b(i|love|like|hate|don't|do)\b/);
+  await page.evaluate((t) => (window as any).__cutlab.getState().seek(t), bi[1].startUs + 100_000);
+  await page.waitForTimeout(800);
+  await page.screenshot({ path: `${SHOTS}/16-bilingual-captions.png` });
 });

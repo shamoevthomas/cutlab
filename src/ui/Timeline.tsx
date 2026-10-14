@@ -370,7 +370,7 @@ function ClipView({ project, track, clip, next, selected, usToPx, drag, onDown, 
   const asset = clip.assetId ? project.assets.find(a => a.id === clip.assetId) : undefined;
   const left = usToPx(clip.startUs + (drag?.dxUs ?? 0));
   const w = Math.max(4, usToPx(op.clipEnd(clip)) - usToPx(clip.startUs));
-  const kind = clip.text ? 'text' : track.kind === 'audio' ? 'audio' : asset?.kind === 'sticker' ? 'sticker' : 'video';
+  const kind = clip.text ? 'text' : track.kind === 'audio' ? 'audio' : track.kind === 'adjustment' ? 'adjust' : asset?.kind === 'sticker' ? 'sticker' : 'video';
   const strip = asset ? getStrip(asset) : undefined;
   const missing = asset && !asset.url;
   const tr = next ? project.transitions.find(x => x.fromClipId === clip.id && x.toClipId === next.id) : undefined;

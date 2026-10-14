@@ -66,12 +66,13 @@ test('home → create → import → edit → export → reopen', async () => {
   // black & white filter on the first clip
   await page.locator('.clip').first().click({ position: { x: 20, y: 30 } });
   await page.getByRole('tab', { name: 'Filtres' }).click();
-  await page.getByRole('button', { name: 'Noir & blanc' }).click();
+  await page.getByRole('button', { name: 'Mono' }).click();
+  await page.getByRole('button', { name: 'Filtre Noir & blanc' }).click();
   // a dissolve between the 2nd and 3rd main clips
   const ids = (await state()).tracks.find((t: any) => t.isMain).clips.map((c: any) => c.id);
   await page.evaluate((id) => (window as any).__cutlab.getState().select([id]), ids[1]);
   await page.getByRole('tab', { name: 'Transitions' }).click();
-  await page.getByRole('button', { name: 'Fondu enchaîné' }).click();
+  await page.getByRole('button', { name: 'Transition Fondu enchaîné' }).click();
   expect((await state()).transitions.length).toBe(1);
 
   // a title
@@ -85,6 +86,7 @@ test('home → create → import → edit → export → reopen', async () => {
   // subtitles from SRT
   await stubOpen(['subs.srt']);
   await page.getByRole('tab', { name: 'Sous-titres' }).click();
+  await page.getByRole('button', { name: 'Ajouter', exact: true }).click();
   await page.getByRole('button', { name: /Importer un fichier SRT/ }).click();
   await expect.poll(async () => (await state()).tracks.filter((t: any) => t.kind === 'text').flatMap((t: any) => t.clips).length).toBe(3);
 

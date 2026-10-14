@@ -47,7 +47,7 @@ export interface TextStyle {
 
 export interface ClipEffect {
   id: string;
-  kind: 'adjust' | 'filter' | 'chroma' | 'mask' | 'matte';
+  kind: 'adjust' | 'filter' | 'chroma' | 'mask' | 'matte' | 'lut';
   enabled: boolean;
   params: Record<string, number | string | boolean>;
 }
@@ -90,11 +90,17 @@ export interface Track {
   clips: Clip[];          // sorted by startUs, never overlapping
 }
 
+export type TransitionKind =
+  | 'dissolve' | 'fadeBlack' | 'flash'
+  | 'slideLeft' | 'slideRight' | 'slideUp' | 'slideDown' | 'push'
+  | 'zoom' | 'zoomOut' | 'spin'
+  | 'wipe' | 'wipeRight' | 'wipeDown' | 'iris';
+
 export interface Transition {
   id: string;
   fromClipId: string;
   toClipId: string;
-  kind: 'dissolve' | 'fadeBlack' | 'slideLeft' | 'zoom' | 'wipe';
+  kind: TransitionKind;
   durationUs: Us;
 }
 

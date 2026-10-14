@@ -6,6 +6,7 @@ import { clipEnd, projectDuration, sourceTimeAt, valueAt } from '../model/ops';
 import { Compositor, renderText, TexSource } from './compositor';
 import { evaluate, Layer, audioClips } from './scene';
 import { loadImage } from './media';
+import { getLut } from './lut';
 
 const DRIFT_S = 0.15;
 const PRELOAD_US = 1_500_000;
@@ -210,6 +211,13 @@ export class Player {
     return { el: v, w: v.videoWidth, h: v.videoHeight, key: 'm:' + L.clip.id, dynamic: true, fit: 'contain' };
   };
 
+  lutOf = (L: Layer) => {
+    const p = useStore.getState().project!;
+    const a = p.assets.find(x => x.id === L.lut?.assetId);
+    const lut = getLut(a, () => { this.needsRender = true; });
+    return lut && a ? { key: a.id, ...lut } : undefined;
+  };
+
   private loop() {
     this.raf = requestAnimationFrame(this.loop);
     const s = useStore.getState();
@@ -227,7 +235,7 @@ export class Player {
     this.syncMedia(p, t, s.playing);
     if (!this.needsRender) return;
     this.needsRender = false;
-    this.comp.render(p.canvas.background, evaluate(p, t), this.source, this.maskSource);
+    this.comp.render(p.canvas.background, evaluate(p, t), this.source, this.maskSource, this.lutOf);
   }
 
   /** JPEG of the current frame (project cover). */

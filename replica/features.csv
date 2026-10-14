@@ -74,15 +74,15 @@ Text templates,text,should,yes,no,own templates (not CapCut's)
 Text animations in out loop,text,must,yes,yes,own animation set
 Auto captions (speech to text),captions,must,pro,yes,"local Whisper (transformers.js, WebGPU/WASM), word timestamps"
 Caption language choice,captions,must,yes,yes,
-Bilingual / translated captions,captions,should,yes,no,LLM or translation API
-Caption style apply to all,captions,must,yes,partial,multi-select styling
-Caption templates and keyword highlight,captions,should,yes,partial,4 caption styles; keyword highlight later
+Bilingual / translated captions,captions,should,yes,yes,local opus-mt translation (pivot via English)
+Caption style apply to all,captions,must,yes,yes,templates restyle every auto caption
+Caption templates and keyword highlight,captions,should,yes,partial,"9 caption templates, apply to all; keyword highlight later"
 Caption emojis AI,captions,could,yes,no,
 Speaker identification captions,captions,could,pro,no,diarization
 Manual captions,captions,must,yes,yes,
 Import captions SRT TXT,captions,must,yes,yes,
 Export captions SRT TXT,captions,must,yes,yes,
-Lyrics recognition,captions,could,yes,no,
+Lyrics recognition,captions,could,yes,yes,"Whisper on the music track, lyrics styling"
 Text-to-speech voices,audio,should,pro,no,TTS API (ElevenLabs/OpenAI) or local
 Voice cloning,audio,could,pro?,no,
 Music and SFX library,audio,should,yes,no,free libraries + own files instead of CapCut's
@@ -95,18 +95,18 @@ Vocal isolation / separate audio,audio,should,pro,no,Demucs
 Voice changer effects,audio,could,pro?,no,
 Auto beat markers,audio,should,yes,no,beat detection
 Auto ducking music under voice,audio,should,unverified,no,our own addition (cheap and useful)
-Filters with intensity,visual,must,yes,yes,own LUT-based set
+Filters with intensity,visual,must,yes,yes,"28 filters in 7 categories, live previews"
 Video effects,visual,should,yes,no,own shader set (glitch blur zoom shake...)
 Body effects,visual,could,yes,no,
-Transitions with duration,visual,must,yes,yes,own set (cross dissolve slide zoom whip...)
+Transitions with duration,visual,must,yes,yes,15 transitions in 4 categories
 Apply transition to all,visual,should,yes,yes,
 Basic colour adjust (exposure contrast saturation temp tint highlights shadows sharpen vignette),color,must,yes,yes,
 HSL 7 channels,color,should,yes,no,
 Curves,color,should,yes,no,
 Colour wheels,color,could,yes,no,
-LUT import cube 3dl,color,should,yes,no,
-Adjustment layers,color,should,yes,no,
-Save colour preset and apply to all,color,should,yes,yes,
+LUT import cube 3dl,color,should,yes,partial,.cube 3D LUTs on clips and adjustment layers; .3dl later
+Adjustment layers,color,should,yes,yes,full-frame pass over everything below
+Save colour preset and apply to all,color,should,yes,yes,saved looks + apply to all
 AI colour correction / colour match,color,could,pro,no,
 Masks linear mirror circle rectangle star heart text,visual,should,yes,no,feather invert stroke
 Chroma key,visual,must,yes,yes,

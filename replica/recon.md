@@ -138,6 +138,21 @@ Screenshots are in `replica/screens/`. They are layout reference only. Labels in
   - Sub-nav: Effets vidéo › categories, then Effets corporels (body effects).
   - Grid with thumbnail and name; Pro diamond and download badge.
 
+- **Transitions** (S05e)
+  - Sub-nav: Transitions › Tendance, plus categories: Classique, Superposition, Lumière, Appareil photo, 3D, Floutage, seasonal/brand.
+  - Search with suggestions.
+  - Grid of animated thumbnails with names; Pro diamond and download badge.
+- **Légendes** (S05f)
+  - Sub-nav: Légendes auto, Modèles (caption style templates), Paroles automatiques (lyrics), Ajouter des légendes (manual / import).
+  - Légendes auto: "Langue source" select, "Légendes bilingues" select (Pro, default "Aucun").
+  - Footer: checkbox "Supprimer les légendes actuelles" and a "Générer" button (Pro badge).
+- **Filtres** (S05g)
+  - Sub-nav: Filtres › À l'affiche, Nouveau, Succès, Vie, Paysage, Portrait, Mono, Films, Rétro, Outils, Non conventionnel.
+  - Thumbnails are a sample photo rendered with the filter.
+- **Ajustement** (S05h)
+  - Sub-nav: Ajouter un ajustement (one "Ajustement personnalisé" tile, i.e. an adjustment layer), Les tiennes (saved presets), LUT.
+- **Tab row** scrolls further right: Modèles (templates), Avatar IA.
+
 **S06 Player**
 - **Header:** "Lecteur-Timeline 01" with a menu.
 - **Footer:** timecode current / total (accent / white), a display-grid toggle and play.

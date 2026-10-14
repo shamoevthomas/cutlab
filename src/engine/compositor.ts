@@ -34,15 +34,25 @@ uniform sampler2D u_mask;
 uniform int u_hasMask;
 uniform int u_maskInvert;
 uniform float u_opacity, u_wipe;
+uniform int u_wipeMode;
 uniform float u_bright, u_contrast, u_sat, u_expo, u_temp, u_tint, u_vig, u_high, u_shad;
 uniform int u_chroma;
 uniform vec3 u_key;
 uniform float u_keyInt, u_keySoft;
+uniform highp sampler3D u_lut;
+uniform int u_hasLut;
+uniform float u_lutAmt, u_lutSize;
+uniform int u_adjPass;   // full-frame adjustment layer pass
 out vec4 o;
 float luma(vec3 c) { return dot(c, vec3(0.2126, 0.7152, 0.0722)); }
 vec2 cbcr(vec3 c) { return vec2(-0.1146*c.r - 0.3854*c.g + 0.5*c.b, 0.5*c.r - 0.4542*c.g - 0.0458*c.b); }
 void main() {
-  if (u_wipe > 0.0 && v_uv.x > u_wipe) discard;
+  if (u_wipe > 0.0) {
+    if (u_wipeMode == 0 && v_uv.x > u_wipe) discard;
+    if (u_wipeMode == 1 && v_uv.x < 1.0 - u_wipe) discard;
+    if (u_wipeMode == 2 && v_uv.y > u_wipe) discard;
+    if (u_wipeMode == 3 && distance(v_uv, vec2(0.5)) > u_wipe * 0.75) discard;
+  }
   vec4 t = texture(u_tex, v_uv);
   vec3 c = t.rgb;
   float a = t.a;
@@ -70,6 +80,11 @@ void main() {
     c *= 1.0 - u_vig / 100.0 * smoothstep(0.35, 1.0, d);
   }
   c = clamp(c, 0.0, 1.0);
+  if (u_hasLut == 1) {
+    vec3 lc = c * (u_lutSize - 1.0) / u_lutSize + 0.5 / u_lutSize;
+    c = mix(c, texture(u_lut, lc).rgb, u_lutAmt);
+  }
+  if (u_adjPass == 1) { o = vec4(mix(t.rgb, c, u_opacity), 1.0); return; }
   a *= u_opacity;
   o = vec4(c * a, a);
 }`;
@@ -88,9 +103,11 @@ export class Compositor {
   textures = new Map<string, { tex: WebGLTexture; lastUse: number; uploadedFor?: unknown }>();
   frame = 0;
   width = 1920; height = 1080;
+  fbos: { fb: WebGLFramebuffer; tex: WebGLTexture }[] = [];
+  lutTex = new Map<string, WebGLTexture>();
 
   constructor(public canvas: HTMLCanvasElement | OffscreenCanvas) {
-    const gl = canvas.getContext('webgl2', { premultipliedAlpha: true, alpha: false, preserveDrawingBuffer: true, antialias: true }) as WebGL2RenderingContext | null;
+    const gl = canvas.getContext('webgl2', { premultipliedAlpha: true, alpha: false, preserveDrawingBuffer: true, antialias: false }) as WebGL2RenderingContext | null;
     if (!gl) throw new Error('WebGL2 indisponible');
     this.gl = gl;
     const p = gl.createProgram()!;
@@ -100,7 +117,7 @@ export class Compositor {
     gl.linkProgram(p);
     if (!gl.getProgramParameter(p, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(p) ?? 'link');
     this.prog = p;
-    for (const n of ['u_canvas', 'u_off', 'u_crop', 'u_size', 'u_center', 'u_flip', 'u_rot', 'u_tex', 'u_opacity', 'u_wipe', 'u_bright', 'u_contrast', 'u_sat', 'u_expo', 'u_temp', 'u_tint', 'u_vig', 'u_high', 'u_shad', 'u_chroma', 'u_key', 'u_keyInt', 'u_keySoft', 'u_mask', 'u_hasMask', 'u_maskInvert'])
+    for (const n of ['u_canvas', 'u_off', 'u_crop', 'u_size', 'u_center', 'u_flip', 'u_rot', 'u_tex', 'u_opacity', 'u_wipe', 'u_bright', 'u_contrast', 'u_sat', 'u_expo', 'u_temp', 'u_tint', 'u_vig', 'u_high', 'u_shad', 'u_chroma', 'u_key', 'u_keyInt', 'u_keySoft', 'u_mask', 'u_hasMask', 'u_maskInvert', 'u_wipeMode', 'u_lut', 'u_hasLut', 'u_lutAmt', 'u_lutSize', 'u_adjPass'])
       this.u[n] = gl.getUniformLocation(p, n);
     const buf = gl.createBuffer();
     gl.bindBuffer(gl.ARRAY_BUFFER, buf);
@@ -111,9 +128,67 @@ export class Compositor {
   }
 
   resize(w: number, h: number) {
+    const changed = this.width !== w || this.height !== h || !this.fbos.length;
     this.width = w; this.height = h;
     if (this.canvas.width !== w) this.canvas.width = w;
     if (this.canvas.height !== h) this.canvas.height = h;
+    if (changed) this.makeFbos();
+  }
+
+  /** Two offscreen targets: layers draw into one, adjustment layers ping-pong between them. */
+  private makeFbos() {
+    const gl = this.gl;
+    for (const f of this.fbos) { gl.deleteFramebuffer(f.fb); gl.deleteTexture(f.tex); }
+    this.fbos = [0, 1].map(() => {
+      const tex = gl.createTexture()!;
+      gl.bindTexture(gl.TEXTURE_2D, tex);
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, this.width, this.height, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+      const fb = gl.createFramebuffer()!;
+      gl.bindFramebuffer(gl.FRAMEBUFFER, fb);
+      gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tex, 0);
+      return { fb, tex };
+    });
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+  }
+
+  private lutTexture(key: string, lut: { size: number; data: Uint8Array }) {
+    const gl = this.gl;
+    let t = this.lutTex.get(key);
+    if (!t) {
+      t = gl.createTexture()!;
+      gl.bindTexture(gl.TEXTURE_3D, t);
+      gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+      gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+      for (const p of [gl.TEXTURE_WRAP_S, gl.TEXTURE_WRAP_T, gl.TEXTURE_WRAP_R]) gl.texParameteri(gl.TEXTURE_3D, p, gl.CLAMP_TO_EDGE);
+      gl.texImage3D(gl.TEXTURE_3D, 0, gl.RGBA8, lut.size, lut.size, lut.size, 0, gl.RGBA, gl.UNSIGNED_BYTE, lut.data);
+      this.lutTex.set(key, t);
+    }
+    return t;
+  }
+
+  private setLut(L: Layer, lutOf?: (L: Layer) => { key: string; size: number; data: Uint8Array } | undefined) {
+    const gl = this.gl;
+    const lut = L.lut && lutOf ? lutOf(L) : undefined;
+    gl.uniform1i(this.u.u_hasLut, lut ? 1 : 0);
+    if (lut) {
+      gl.activeTexture(gl.TEXTURE2);
+      gl.bindTexture(gl.TEXTURE_3D, this.lutTexture(lut.key, lut));
+      gl.activeTexture(gl.TEXTURE0);
+      gl.uniform1f(this.u.u_lutAmt, L.lut!.amount);
+      gl.uniform1f(this.u.u_lutSize, lut.size);
+    }
+  }
+
+  private setAdjust(L: Layer) {
+    const gl = this.gl, A = L.adjust;
+    gl.uniform1f(this.u.u_bright, A.brightness); gl.uniform1f(this.u.u_contrast, A.contrast);
+    gl.uniform1f(this.u.u_sat, A.saturation); gl.uniform1f(this.u.u_expo, A.exposure);
+    gl.uniform1f(this.u.u_temp, A.temperature); gl.uniform1f(this.u.u_tint, A.tint);
+    gl.uniform1f(this.u.u_vig, A.vignette); gl.uniform1f(this.u.u_high, A.highlights); gl.uniform1f(this.u.u_shad, A.shadows);
   }
 
   private texture(src: TexSource) {
@@ -138,24 +213,53 @@ export class Compositor {
     return t.tex;
   }
 
-  render(background: string, layers: Layer[], source: (L: Layer) => TexSource | null, maskSource?: (L: Layer) => TexSource | null) {
+  render(background: string, layers: Layer[], source: (L: Layer) => TexSource | null, maskSource?: (L: Layer) => TexSource | null,
+    lutOf?: (L: Layer) => { key: string; size: number; data: Uint8Array } | undefined) {
     const gl = this.gl;
     this.frame++;
+    if (!this.fbos.length) this.makeFbos();
+    let cur = 0;
+    gl.bindFramebuffer(gl.FRAMEBUFFER, this.fbos[cur].fb);
     gl.viewport(0, 0, this.width, this.height);
     const bg = parseInt(background.replace('#', ''), 16) || 0;
     gl.clearColor((bg >> 16 & 255) / 255, (bg >> 8 & 255) / 255, (bg & 255) / 255, 1);
     gl.clear(gl.COLOR_BUFFER_BIT);
     gl.useProgram(this.prog);
-    gl.enable(gl.BLEND);
     gl.uniform2f(this.u.u_canvas, this.width, this.height);
     gl.uniform1i(this.u.u_tex, 0);
     gl.uniform1i(this.u.u_mask, 1);
+    gl.uniform1i(this.u.u_lut, 2);
     gl.activeTexture(gl.TEXTURE0);
     for (const L of layers) {
+      if (L.kind === 'adjustment') {
+        // full-frame pass: read what is below from one target, write the graded result into the other
+        const src = this.fbos[cur], dst = this.fbos[1 - cur];
+        gl.bindFramebuffer(gl.FRAMEBUFFER, dst.fb);
+        gl.disable(gl.BLEND);
+        gl.bindTexture(gl.TEXTURE_2D, src.tex);
+        gl.uniform1i(this.u.u_adjPass, 1);
+        gl.uniform1i(this.u.u_hasMask, 0);
+        gl.uniform1i(this.u.u_chroma, 0);
+        gl.uniform4f(this.u.u_crop, 0, 0, 0, 0);
+        gl.uniform2f(this.u.u_size, this.width, this.height);
+        gl.uniform2f(this.u.u_off, 0, 0);
+        gl.uniform2f(this.u.u_center, 0, 0);
+        gl.uniform2f(this.u.u_flip, 1, -1);          // framebuffer textures are stored bottom-up
+        gl.uniform1f(this.u.u_rot, 0);
+        gl.uniform1f(this.u.u_wipe, 0);
+        gl.uniform1f(this.u.u_opacity, Math.max(0, Math.min(1, L.opacity)));
+        this.setAdjust(L);
+        this.setLut(L, lutOf);
+        gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+        gl.uniform1i(this.u.u_adjPass, 0);
+        cur = 1 - cur;
+        continue;
+      }
       const src = source(L);
       if (!src || !src.w || !src.h) continue;
       const mask = L.matte && maskSource ? maskSource(L) : null;
       if (L.matte && !mask) continue; // wait for the matte frame rather than flash the background
+      gl.enable(gl.BLEND);
       if (mask) { gl.activeTexture(gl.TEXTURE1); this.texture(mask); gl.activeTexture(gl.TEXTURE0); }
       gl.uniform1i(this.u.u_hasMask, mask ? 1 : 0);
       gl.uniform1i(this.u.u_maskInvert, L.matte?.invert ? 1 : 0);
@@ -176,17 +280,20 @@ export class Compositor {
       gl.uniform1f(this.u.u_rot, (L.rotation * Math.PI) / 180);
       gl.uniform1f(this.u.u_opacity, Math.max(0, Math.min(1, L.opacity)));
       gl.uniform1f(this.u.u_wipe, L.wipe);
-      const A = L.adjust;
-      gl.uniform1f(this.u.u_bright, A.brightness); gl.uniform1f(this.u.u_contrast, A.contrast);
-      gl.uniform1f(this.u.u_sat, A.saturation); gl.uniform1f(this.u.u_expo, A.exposure);
-      gl.uniform1f(this.u.u_temp, A.temperature); gl.uniform1f(this.u.u_tint, A.tint);
-      gl.uniform1f(this.u.u_vig, A.vignette); gl.uniform1f(this.u.u_high, A.highlights); gl.uniform1f(this.u.u_shad, A.shadows);
+      gl.uniform1i(this.u.u_wipeMode, L.wipeMode ?? 0);
+      this.setAdjust(L);
+      this.setLut(L, lutOf);
       gl.uniform1i(this.u.u_chroma, L.chroma.on ? 1 : 0);
       gl.uniform3f(this.u.u_key, ...L.chroma.color);
       gl.uniform1f(this.u.u_keyInt, L.chroma.intensity); gl.uniform1f(this.u.u_keySoft, L.chroma.shadow);
       this.blend(L.blend);
       gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
     }
+    // show the result on the canvas
+    gl.bindFramebuffer(gl.READ_FRAMEBUFFER, this.fbos[cur].fb);
+    gl.bindFramebuffer(gl.DRAW_FRAMEBUFFER, null);
+    gl.blitFramebuffer(0, 0, this.width, this.height, 0, 0, this.width, this.height, gl.COLOR_BUFFER_BIT, gl.NEAREST);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
     this.gc();
   }
 
@@ -211,6 +318,8 @@ export class Compositor {
   dispose() {
     for (const t of this.textures.values()) this.gl.deleteTexture(t.tex);
     this.textures.clear();
+    for (const t of this.lutTex.values()) this.gl.deleteTexture(t);
+    for (const f of this.fbos) { this.gl.deleteFramebuffer(f.fb); this.gl.deleteTexture(f.tex); }
     this.gl.getExtension('WEBGL_lose_context')?.loseContext();
   }
 }

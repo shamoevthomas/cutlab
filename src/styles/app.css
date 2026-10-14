@@ -217,6 +217,7 @@ input[type=color] { width: 30px; height: 24px; padding: 0; border: 1px solid var
 .clip.audio { background: var(--c-track-audio); }
 .clip.video { background: var(--c-track-video); }
 .clip.sticker { background: var(--c-track-sticker); }
+.clip.adjust { background: var(--c-track-adjustment); }
 .playhead { position: absolute; top: 0; bottom: 0; width: 1px; background: var(--c-playhead); z-index: 4; pointer-events: none; }
 .playhead::before { content: ''; position: absolute; top: 0; left: -6px; width: 13px; height: 14px; background: var(--c-playhead); clip-path: polygon(0 0, 100% 0, 100% 60%, 50% 100%, 0 60%); }
 .inout { position: absolute; top: 0; height: var(--l-ruler); background: rgba(62,224,143,.18); border-left: 1px solid var(--c-accent); border-right: 1px solid var(--c-accent); z-index: 2; pointer-events: none; }
@@ -234,3 +235,41 @@ input[type=color] { width: 30px; height: 24px; padding: 0; border: 1px solid var
 
 .spin { animation: spin 1s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
+
+.filter-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(92px, 1fr)); gap: 10px 8px; }
+.filter-tile { background: none; border: 0; padding: 0; width: 100%; min-width: 0; cursor: pointer; display: flex; flex-direction: column; gap: 4px; color: var(--c-text-muted); font-size: var(--fs-xs); text-align: left; }
+.filter-tile .ft-img { display: block; width: 100%; aspect-ratio: 1/1; border-radius: var(--r-md); background: var(--c-surface-2) center/cover no-repeat; border: 2px solid transparent; }
+.filter-tile:hover .ft-img { border-color: #4a4e58; }
+.filter-tile.on .ft-img { border-color: var(--c-accent); }
+.filter-tile.on { color: var(--c-accent); }
+
+/* transition previews: A (blue-grey) → B (green), animated on hover */
+.tr-prev { position: relative; overflow: hidden; background: #3a4a63 !important; }
+.tr-prev i, .tr-prev b { position: absolute; inset: 0; }
+.tr-prev i { background: linear-gradient(135deg, #4c6a96, #2b3b55); }
+.tr-prev b { background: linear-gradient(135deg, #3ee08f, #1f7a52); opacity: 0; }
+.filter-tile:hover .tr-prev b, .filter-tile.on .tr-prev b { animation: var(--tr-anim) 1.4s ease-in-out infinite; }
+.tr-dissolve, .tr-fadeBlack, .tr-flash { --tr-anim: trFade; }
+.tr-fadeBlack:hover i { animation: trOut 1.4s ease-in-out infinite; }
+.tr-flash { background: #fff !important; }
+.tr-slideLeft, .tr-push { --tr-anim: trLeft; } .tr-slideRight { --tr-anim: trRight; } .tr-slideUp { --tr-anim: trUp; } .tr-slideDown { --tr-anim: trDown; }
+.tr-zoom { --tr-anim: trZoom; } .tr-zoomOut { --tr-anim: trZoomOut; } .tr-spin { --tr-anim: trSpin; }
+.tr-wipe { --tr-anim: trWipe; } .tr-wipeRight { --tr-anim: trWipeR; } .tr-wipeDown { --tr-anim: trWipeD; } .tr-iris { --tr-anim: trIris; }
+@keyframes trFade { 0%, 20% { opacity: 0 } 70%, 100% { opacity: 1 } }
+@keyframes trOut { 0%, 20% { opacity: 1 } 45%, 100% { opacity: 0 } }
+@keyframes trLeft { 0%, 15% { opacity: 1; transform: translateX(100%) } 75%, 100% { opacity: 1; transform: none } }
+@keyframes trRight { 0%, 15% { opacity: 1; transform: translateX(-100%) } 75%, 100% { opacity: 1; transform: none } }
+@keyframes trUp { 0%, 15% { opacity: 1; transform: translateY(100%) } 75%, 100% { opacity: 1; transform: none } }
+@keyframes trDown { 0%, 15% { opacity: 1; transform: translateY(-100%) } 75%, 100% { opacity: 1; transform: none } }
+@keyframes trZoom { 0%, 15% { opacity: 0; transform: scale(1.6) } 75%, 100% { opacity: 1; transform: none } }
+@keyframes trZoomOut { 0%, 15% { opacity: 0; transform: scale(.5) } 75%, 100% { opacity: 1; transform: none } }
+@keyframes trSpin { 0%, 15% { opacity: 0; transform: rotate(-180deg) scale(.4) } 75%, 100% { opacity: 1; transform: none } }
+@keyframes trWipe { 0%, 15% { opacity: 1; clip-path: inset(0 100% 0 0) } 75%, 100% { opacity: 1; clip-path: inset(0) } }
+@keyframes trWipeR { 0%, 15% { opacity: 1; clip-path: inset(0 0 0 100%) } 75%, 100% { opacity: 1; clip-path: inset(0) } }
+@keyframes trWipeD { 0%, 15% { opacity: 1; clip-path: inset(0 0 100% 0) } 75%, 100% { opacity: 1; clip-path: inset(0) } }
+@keyframes trIris { 0%, 15% { opacity: 1; clip-path: circle(0%) } 75%, 100% { opacity: 1; clip-path: circle(75%) } }
+
+.asset-tabs-wrap { display: flex; align-items: stretch; border-bottom: 1px solid var(--c-border); flex: none; }
+.asset-tabs-wrap .asset-tabs { border-bottom: 0; flex: 1; }
+.tab-scroll { flex: none; width: 20px; border: 0; background: var(--c-surface); color: var(--c-text-faint); cursor: pointer; display: grid; place-items: center; }
+.tab-scroll:hover { color: var(--c-text); background: var(--c-surface-2); }

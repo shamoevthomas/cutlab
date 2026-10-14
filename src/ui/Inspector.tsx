@@ -7,7 +7,7 @@ import { uid, RATIOS } from '../model/schema';
 import { SliderRow, Switch } from './common';
 import { FILTERS, neutralAdjust } from '../engine/scene';
 import { bridge } from '../bridge';
-import { normalizeClips, autoReframe, removeBackground, ReframeSpeed, cleanAudio, resetAudio, importFonts } from '../actions';
+import { normalizeClips, autoReframe, removeBackground, ReframeSpeed, cleanAudio, resetAudio, importFonts, importLuts, saveLook } from '../actions';
 import { LOUDNESS_TARGETS } from '../model/loudness';
 
 type Tab = 'basic' | 'text' | 'anim' | 'speed' | 'audio' | 'adjust' | 'chroma';
@@ -93,14 +93,16 @@ function ClipInspector({ refItem }: { refItem: op.ClipRef }) {
   const asset = project.assets.find(a => a.id === clip.assetId);
   const isText = !!clip.text;
   const isAudio = track.kind === 'audio';
+  const isAdjust = track.kind === 'adjustment';
   const isVideo = asset?.kind === 'video';
   const tabs: [Tab, string][] = [];
+  if (isAdjust) tabs.push(['adjust', 'Réglages']);
   if (isText) tabs.push(['text', 'Texte']);
-  if (!isAudio) tabs.push(['basic', isText ? 'Position' : 'Vidéo']);
-  if (!isAudio) tabs.push(['anim', 'Animation']);
+  if (!isAudio && !isAdjust) tabs.push(['basic', isText ? 'Position' : 'Vidéo']);
+  if (!isAudio && !isAdjust) tabs.push(['anim', 'Animation']);
   if (isVideo || isAudio) tabs.push(['audio', 'Audio']);
   if (isVideo || isAudio) tabs.push(['speed', 'Vitesse']);
-  if (!isAudio && !isText) tabs.push(['adjust', 'Réglages']);
+  if (!isAudio && !isText && !isAdjust) tabs.push(['adjust', 'Réglages']);
   if (isVideo || asset?.kind === 'image') tabs.push(['chroma', 'Détourage']);
   const [tab, setTab] = useState<Tab>(tabs[0][0]);
   const cur = tabs.some(t => t[0] === tab) ? tab : tabs[0][0];
@@ -385,8 +387,30 @@ const ADJ: [keyof ReturnType<typeof neutralAdjust>, string][] = [
 function AdjustTab({ clip }: { clip: Clip }) {
   const adj = effect(clip, 'adjust');
   const filt = effect(clip, 'filter');
+  const lut = effect(clip, 'lut');
+  const project = useStore(s => s.project)!;
+  const luts = project.assets.filter(a => a.kind === 'lut');
+  const track = op.findClip(project, clip.id)?.track;
   return (
     <>
+      {track?.kind === 'adjustment' && <div className="insp-section"><h5>Calque de réglage</h5>
+        <PropSlider clip={clip} prop="opacity" label="Intensité" min={0} max={100} unit="%" scale={100} def={1} />
+        <div className="hint">Agit sur tout ce qui est sous ce calque, pendant sa durée.</div>
+      </div>}
+      <div className="insp-section"><h5>LUT</h5>
+        <div className="row">
+          <select className="input grow" value={String(lut?.params.lutAssetId ?? '')} aria-label="LUT"
+            onChange={e => editClip(clip.id, c => {
+              c.effects = c.effects.filter(x => x.kind !== 'lut');
+              if (e.target.value) c.effects.push({ id: uid(), kind: 'lut', enabled: true, params: { lutAssetId: e.target.value, intensity: 100 } });
+            })}>
+            <option value="">Aucune</option>
+            {luts.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
+          </select>
+          <button className="btn sm" onClick={async () => { const a = await importLuts(); if (a[0]) editClip(clip.id, c => { c.effects = c.effects.filter(x => x.kind !== 'lut'); c.effects.push({ id: uid(), kind: 'lut', enabled: true, params: { lutAssetId: a[0].id, intensity: 100 } }); }); }}>Importer</button>
+        </div>
+        {lut && <SliderRow label="Intensité" min={0} max={100} unit="%" value={Number(lut.params.intensity ?? 100)} defaultValue={100} onChange={v => setEffectParam(clip.id, 'lut', 'intensity', v)} />}
+      </div>
       {filt && (
         <div className="insp-section"><h5>Filtre : {FILTERS[String(filt.params.preset)]?.label}
           <button className="btn sm ghost" onClick={() => editClip(clip.id, c => { c.effects = c.effects.filter(e => e.kind !== 'filter'); })}>Retirer</button></h5>
@@ -399,13 +423,26 @@ function AdjustTab({ clip }: { clip: Clip }) {
           <SliderRow key={k} label={l} min={k === 'vignette' ? 0 : -100} max={100} value={Number(adj?.params[k] ?? 0)} defaultValue={0} onChange={v => setEffectParam(clip.id, 'adjust', k, v)} />
         ))}
       </div>
+      <SaveLook clip={clip} />
       <button className="btn sm" onClick={() => {
-        const src = clip.effects.filter(e => e.kind === 'adjust' || e.kind === 'filter');
-        st().edit(p => { for (const t of p.tracks) for (const c of t.clips) if (c.id !== clip.id && !c.text && t.kind !== 'audio') { c.effects = [...c.effects.filter(e => e.kind !== 'adjust' && e.kind !== 'filter'), ...src.map(e => ({ ...e, id: uid(), params: { ...e.params } }))]; } });
+        const src = clip.effects.filter(e => e.kind === 'adjust' || e.kind === 'filter' || e.kind === 'lut');
+        st().edit(p => { for (const t of p.tracks) for (const c of t.clips) if (c.id !== clip.id && !c.text && t.kind !== 'audio') { c.effects = [...c.effects.filter(e => e.kind !== 'adjust' && e.kind !== 'filter' && e.kind !== 'lut'), ...src.map(e => ({ ...e, id: uid(), params: { ...e.params } }))]; } });
         st().notify('success', 'Réglages appliqués à tous les clips');
       }}>Appliquer à tous les clips</button>
-      <div className="insp-section"><h5>Couleur avancée <span className="badge">phase 3</span></h5><div className="hint">TSL, courbes, roues chromatiques et LUT .cube.</div></div>
+      <div className="insp-section"><h5>Couleur avancée <span className="badge">phase 4</span></h5><div className="hint">TSL, courbes et roues chromatiques.</div></div>
     </>
+  );
+}
+
+function SaveLook({ clip }: { clip: Clip }) {
+  const [name, setName] = useState<string | null>(null);
+  if (name === null) return <button className="btn sm" onClick={() => setName(`Réglage ${new Date().toLocaleDateString('fr-FR')}`)}>Enregistrer ce réglage</button>;
+  const save = () => { if (name.trim()) { saveLook(name.trim(), clip); st().notify('success', `« ${name.trim()} » enregistré dans Réglages › Mes réglages`); } setName(null); };
+  return (
+    <div className="row">
+      <input className="input grow" autoFocus value={name} onChange={e => setName(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') save(); if (e.key === 'Escape') setName(null); }} aria-label="Nom du réglage" />
+      <button className="btn sm primary" onClick={save}>OK</button>
+    </div>
   );
 }
 

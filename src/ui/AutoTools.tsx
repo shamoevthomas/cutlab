@@ -1,9 +1,9 @@
 import { useState } from 'react';
-import { Captions, Scissors, Loader2 } from 'lucide-react';
+import { Scissors, Loader2 } from 'lucide-react';
 import { useStore } from '../store';
 import { Modal, SliderRow, Switch, fmtDur } from './common';
-import { ASR_MODELS, LANGUAGES, AsrProgress } from '../engine/asr';
-import { generateCaptions, CAPTION_STYLES, CaptionStyle, planAutoCut, applyAutoCut, CutPlan } from '../actions';
+import { ASR_MODELS, LANGUAGES, AsrProgress, TRANSLATE_TO } from '../engine/asr';
+import { generateCaptions, CaptionStyle, planAutoCut, applyAutoCut, CutPlan } from '../actions';
 import * as op from '../model/ops';
 
 function safeGet(k: string, d: string) { try { return localStorage.getItem(k) ?? d; } catch { return d; } }
@@ -18,11 +18,14 @@ function ProgressView({ p }: { p: AsrProgress }) {
   );
 }
 
-export function AutoCaptionsPanel() {
+export function getCaptionStyle(): CaptionStyle { return (safeGet('cutlab.capStyle', 'reel') as CaptionStyle); }
+export function setCaptionStyle(v: CaptionStyle) { safeSet('cutlab.capStyle', v); }
+
+export function AutoCaptionsPanel({ lyrics = false }: { lyrics?: boolean }) {
   const [language, setLanguage] = useState<string>(safeGet('cutlab.lang', 'french'));
   const [model, setModel] = useState(safeGet('cutlab.asrModel', ASR_MODELS[0].id));
-  const [style, setStyle] = useState<CaptionStyle>('reel');
-  const [upper, setUpper] = useState(false);
+  const [bilingual, setBilingual] = useState<string>('none');
+  const [replace, setReplace] = useState(true);
   const [busy, setBusy] = useState<AsrProgress | null>(null);
   const [error, setError] = useState<string | null>(null);
   const hasCaptions = useStore(s => s.project?.tracks.some(t => t.role === 'captions'));
@@ -31,30 +34,35 @@ export function AutoCaptionsPanel() {
     safeSet('cutlab.lang', language); safeSet('cutlab.asrModel', model);
     setBusy({ phase: 'audio', text: 'Préparation…' });
     try {
-      const n = await generateCaptions({ model, language: language === 'auto' ? null : language, style, upper }, setBusy);
-      useStore.getState().notify('success', `${n} sous-titres créés`);
+      const n = await generateCaptions({ model, language: language === 'auto' ? null : language, style: getCaptionStyle(), upper: false,
+        translateTo: bilingual === 'none' ? null : bilingual, replace, lyrics }, setBusy);
+      useStore.getState().notify('success', `${n} ${lyrics ? 'lignes de paroles' : 'sous-titres'} créés`);
     } catch (e: any) { setError(e?.message ?? String(e)); }
     finally { setBusy(null); }
   };
   return (
-    <div className="col" style={{ gap: 10 }}>
-      <div className="row"><Captions size={16} color="var(--c-accent)" /><b>Sous-titres automatiques</b></div>
-      <label className="field"><span>Langue parlée</span>
+    <div className="col" style={{ gap: 12, flex: 1 }}>
+      <label className="field"><span>{lyrics ? 'Langue de la chanson' : 'Langue source'}</span>
         <select className="input" value={language} onChange={e => setLanguage(e.target.value)} disabled={!!busy}>
           {LANGUAGES.map(([v, l]) => <option key={l} value={v ?? 'auto'}>{l}</option>)}
         </select></label>
-      <label className="field"><span>Modèle (sur ton ordinateur)</span>
+      {!lyrics && <label className="field"><span>Sous-titres bilingues</span>
+        <select className="input" value={bilingual} onChange={e => setBilingual(e.target.value)} disabled={!!busy}>
+          <option value="none">Aucun</option>
+          {TRANSLATE_TO.map(([v, l]) => <option key={v} value={v}>{l} (2e ligne)</option>)}
+        </select></label>}
+      <label className="field"><span>Précision</span>
         <select className="input" value={model} onChange={e => setModel(e.target.value)} disabled={!!busy}>
           {ASR_MODELS.map(m => <option key={m.id} value={m.id}>{m.label}</option>)}
         </select></label>
-      <label className="field"><span>Style</span>
-        <select className="input" value={style} onChange={e => setStyle(e.target.value as CaptionStyle)} disabled={!!busy}>
-          {CAPTION_STYLES.map(s => <option key={s.id} value={s.id}>{s.label}</option>)}
-        </select></label>
-      <Switch label="Tout en majuscules" checked={upper} onChange={setUpper} />
-      {busy ? <ProgressView p={busy} /> : <button className="btn primary" onClick={run}>{hasCaptions ? 'Régénérer les sous-titres' : 'Générer les sous-titres'}</button>}
+      <div className="hint">Style : celui choisi dans « Modèles ». Transcrit le son de la timeline tel qu’il est (coupes comprises) : fais la coupe des blancs d’abord.</div>
+      <span className="grow" />
+      {busy && <ProgressView p={busy} />}
       {error && <div role="alert" style={{ color: 'var(--c-danger)', fontSize: 'var(--fs-sm)' }}>{error}</div>}
-      <div className="hint">Transcrit le son de la timeline tel qu’il est (coupes comprises). Fais la coupe des blancs d’abord, les sous-titres après.</div>
+      <div className="row" style={{ borderTop: '1px solid var(--c-border)', paddingTop: 10 }}>
+        <label className="row grow" style={{ fontSize: 'var(--fs-sm)' }}><input type="checkbox" checked={replace} onChange={e => setReplace(e.target.checked)} disabled={!hasCaptions} /> Supprimer les sous-titres actuels</label>
+        <button className="btn primary" onClick={run} disabled={!!busy}>Générer</button>
+      </div>
     </div>
   );
 }

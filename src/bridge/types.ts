@@ -13,7 +13,7 @@ export interface Bridge {
   loadProject(id: string): Promise<Project | null>;
   saveProject(p: Project, cover?: string): Promise<void>;
   deleteProject(id: string): Promise<void>;
-  pickFiles(accept: 'media' | 'audio' | 'srt' | 'font'): Promise<PickedFile[]>;
+  pickFiles(accept: 'media' | 'audio' | 'srt' | 'font' | 'lut'): Promise<PickedFile[]>;
   /** Url the renderer can load for an asset path; null if the file is gone. */
   resolve(path: string): Promise<string | null>;
   readText(path: string): Promise<string>;

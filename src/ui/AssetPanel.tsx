@@ -1,14 +1,17 @@
-import { useMemo, useState } from 'react';
-import { Blend, Captions, Clapperboard, Film, Image as ImageIcon, Music, Plus, Search, Sliders, Sparkles, Sticker, Type, Upload, Wand2, AlertTriangle, Trash2 } from 'lucide-react';
+import { useEffect, useMemo, useState } from 'react';
+import { ChevronLeft, ChevronRight, Blend, Captions, Clapperboard, Film, Image as ImageIcon, Music, Plus, Search, Sliders, Sparkles, Sticker, Type, Upload, Wand2, AlertTriangle, Trash2 } from 'lucide-react';
 import { useStore, Panel } from '../store';
-import { addAssetAtPlayhead, addText, exportSubtitles, importFiles, importSubtitles, pickAndImport, relinkAsset } from '../actions';
+import { addAdjustmentLayer, importLuts, applyLut, listLooks, deleteLook, applyLook } from '../actions';
+import { addAssetAtPlayhead, addText, exportSubtitles, importFiles, importSubtitles, pickAndImport, relinkAsset, CAPTION_STYLES, captionStyle, restyleCaptions } from '../actions';
+import { Switch } from './common';
 import { pickedFromDrop } from './dropFiles';
 import { fmtDur } from './common';
-import { FILTERS, TRANSITIONS } from '../engine/scene';
+import { FILTERS, FILTER_CATS, TRANSITIONS, TRANSITION_CATS } from '../engine/scene';
+import { filterThumbs } from '../engine/thumbs';
 import * as op from '../model/ops';
 import { defaultTextStyle, uid, TextStyle } from '../model/schema';
 import { makeSticker, STICKERS } from '../engine/stickers';
-import { AutoCaptionsPanel } from './AutoTools';
+import { AutoCaptionsPanel, getCaptionStyle, setCaptionStyle } from './AutoTools';
 
 const TABS: { id: Panel; label: string; icon: any }[] = [
   { id: 'media', label: 'Médias', icon: Film },
@@ -26,12 +29,16 @@ export function AssetPanel() {
   const panel = useStore(s => s.panel);
   return (
     <section className="panel" aria-label="Ressources">
-      <div className="asset-tabs" role="tablist" aria-label="Catégories">
-        {TABS.map(t => (
-          <button key={t.id} role="tab" aria-selected={panel === t.id} className="asset-tab" onClick={() => useStore.getState().set('panel', t.id)}>
-            <t.icon size={17} />{t.label}
-          </button>
-        ))}
+      <div className="asset-tabs-wrap">
+        <button className="tab-scroll l" aria-label="Onglets précédents" onClick={e => (e.currentTarget.nextElementSibling as HTMLElement).scrollBy({ left: -180, behavior: 'smooth' })}><ChevronLeft size={14} /></button>
+        <div className="asset-tabs" role="tablist" aria-label="Catégories">
+          {TABS.map(t => (
+            <button key={t.id} role="tab" aria-selected={panel === t.id} className="asset-tab" onClick={e => { useStore.getState().set('panel', t.id); e.currentTarget.scrollIntoView({ inline: 'nearest', block: 'nearest' }); }}>
+              <t.icon size={17} />{t.label}
+            </button>
+          ))}
+        </div>
+        <button className="tab-scroll r" aria-label="Onglets suivants" onClick={e => (e.currentTarget.previousElementSibling as HTMLElement).scrollBy({ left: 180, behavior: 'smooth' })}><ChevronRight size={14} /></button>
       </div>
       <div role="tabpanel" style={{ display: 'contents' }}>
         {panel === 'media' && <MediaTab kind="visual" />}
@@ -42,7 +49,7 @@ export function AssetPanel() {
         {panel === 'transitions' && <TransitionTab />}
         {panel === 'captions' && <CaptionTab />}
         {panel === 'filters' && <FilterTab />}
-        {panel === 'adjust' && <Soon icon={Sliders} title="Calques de réglage" text="Les calques de réglage et les LUT arrivent en phase 2. En attendant, sélectionne un clip et ouvre l’onglet Réglages de l’inspecteur." />}
+        {panel === 'adjust' && <AdjustTab />}
       </div>
     </section>
   );
@@ -209,6 +216,7 @@ function TransitionTab() {
   const project = useStore(s => s.project)!;
   const selection = useStore(s => s.selection);
   const [dur, setDur] = useState(0.5);
+  const [cat, setCat] = useState(TRANSITION_CATS[0]);
   const ref = selection.length === 1 ? op.findClip(project, selection[0]) : null;
   const next = ref ? ref.track.clips[ref.index + 1] : undefined;
   const adjacent = ref && next && Math.abs(op.clipEnd(ref.clip) - next.startUs) < 1000;
@@ -231,13 +239,16 @@ function TransitionTab() {
   };
   return (
     <div className="asset-body">
-      <nav className="subnav"><button className="on">Transitions</button></nav>
+      <nav className="subnav" aria-label="Catégories de transitions">
+        {TRANSITION_CATS.map(c => <button key={c} className={cat === c ? 'on' : ''} onClick={() => setCat(c)}>{c}</button>)}
+      </nav>
       <div className="asset-content">
         {!adjacent && <div className="hint">Sélectionne le clip <b>avant</b> la coupe : la transition se place entre lui et le clip suivant.</div>}
-        <div className="asset-grid">
-          {TRANSITIONS.map(t => (
-            <button key={t.kind} className={'preset' + (current?.kind === t.kind ? ' on' : '')} disabled={!adjacent} onClick={() => apply(t.kind)} style={{ opacity: adjacent ? 1 : .5 }}>
-              <Blend size={20} /> {t.label}
+        <div className="filter-grid">
+          {TRANSITIONS.filter(t => t.cat === cat).map(t => (
+            <button key={t.kind} className={'filter-tile' + (current?.kind === t.kind ? ' on' : '')} disabled={!adjacent} onClick={() => apply(t.kind)} style={{ opacity: adjacent ? 1 : .55 }} aria-label={`Transition ${t.label}`}>
+              <span className={`ft-img tr-prev tr-${t.kind}`}><i /><b /></span>
+              <span className="ellipsis">{t.label}</span>
             </button>
           ))}
         </div>
@@ -254,11 +265,20 @@ function TransitionTab() {
 }
 
 function FilterTab() {
-  useStore(s => s.selection); useStore(s => s.project);
+  useStore(s => s.selection); const project = useStore(s => s.project)!;
   const refs = selectedVisualClips();
   const current = refs[0]?.clip.effects.find(e => e.kind === 'filter');
+  const [cat, setCat] = useState(FILTER_CATS[0]);
+  const [thumbs, setThumbs] = useState<Record<string, string> | null>(null);
+  // preview image: the selected clip's thumbnail, else the first visual asset, else a built-in sample
+  const sel = refs[0] && project.assets.find(a => a.id === refs[0].clip.assetId);
+  const sample = sel?.thumb ?? project.assets.find(a => (a.kind === 'video' || a.kind === 'image') && a.thumb)?.thumb ?? SAMPLE;
+  useEffect(() => { let alive = true; filterThumbs(sample).then(t => alive && setThumbs(t)).catch(() => {}); return () => { alive = false; }; }, [sample]);
   const apply = (preset: string | null) => {
-    if (!refs.length) { useStore.getState().notify('info', 'Sélectionne d’abord un clip dans la timeline'); return; }
+    if (!refs.length) {
+      if (preset) addAdjustmentLayer([{ id: uid(), kind: 'filter', enabled: true, params: { preset, intensity: 100 } }]);
+      return;
+    }
     useStore.getState().edit(p => {
       for (const r of refs) {
         const c = op.findClip(p, r.clip.id)!.clip;
@@ -267,42 +287,128 @@ function FilterTab() {
       }
     });
   };
+  const tile = (id: string, label: string) => (
+    <button key={id} className={'filter-tile' + ((id === 'none' ? !current : current?.params.preset === id) ? ' on' : '')} onClick={() => apply(id === 'none' ? null : id)} aria-label={`Filtre ${label}`}>
+      <span className="ft-img" style={thumbs ? { backgroundImage: `url(${thumbs[id]})` } : undefined} />
+      <span className="ellipsis">{label}</span>
+    </button>
+  );
   return (
     <div className="asset-body">
-      <nav className="subnav"><button className="on">Filtres</button></nav>
+      <nav className="subnav" aria-label="Catégories de filtres">
+        {FILTER_CATS.map(c => <button key={c} className={cat === c ? 'on' : ''} onClick={() => setCat(c)}>{c}</button>)}
+      </nav>
       <div className="asset-content">
-        <div className="asset-grid">
-          <button className={'preset' + (!current ? ' on' : '')} onClick={() => apply(null)}>Aucun</button>
-          {Object.entries(FILTERS).map(([id, f]) => (
-            <button key={id} className={'preset' + (current?.params.preset === id ? ' on' : '')} onClick={() => apply(id)}>
-              <span style={{ width: 44, height: 28, borderRadius: 4, ...filterSwatch(f) }} />{f.label}
-            </button>
-          ))}
+        <div className="filter-grid">
+          {cat === FILTER_CATS[0] && tile('none', 'Aucun')}
+          {Object.entries(FILTERS).filter(([, f]) => f.cat === cat).map(([id, f]) => tile(id, f.label))}
         </div>
-        <div className="hint">{refs.length ? `S’applique à ${refs.length > 1 ? `${refs.length} clips` : 'au clip sélectionné'}. Intensité réglable dans l’inspecteur.` : 'Sélectionne un clip pour appliquer un filtre.'}</div>
+        <div className="hint">{refs.length ? `S’applique ${refs.length > 1 ? `aux ${refs.length} clips sélectionnés` : 'au clip sélectionné'}. Intensité réglable dans l’inspecteur.` : 'Aucun clip sélectionné : le filtre s’ajoute sur un calque de réglage à la tête de lecture.'}</div>
       </div>
     </div>
   );
 }
 
-function filterSwatch(f: any): React.CSSProperties {
-  const sat = 1 + (f.saturation ?? 0) / 100, br = 1 + (f.brightness ?? 0) / 100, ct = 1 + (f.contrast ?? 0) / 100;
-  const t = f.temperature ?? 0;
-  const warm = t > 0 ? ` sepia(${Math.min(1, t / 80)})` : t < 0 ? ` hue-rotate(${t / 2}deg)` : '';
-  return { background: 'linear-gradient(135deg,#d97a52,#3e8fe0 60%,#2fbf71)', filter: `saturate(${sat}) brightness(${br}) contrast(${ct})${warm}` };
+// neutral sample photo substitute (gradient landscape) when the project has no media yet
+const SAMPLE = 'data:image/svg+xml;base64,' + btoa(`<svg xmlns="http://www.w3.org/2000/svg" width="160" height="100"><defs><linearGradient id="s" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#7fb3e6"/><stop offset="1" stop-color="#f3c98b"/></linearGradient></defs><rect width="160" height="100" fill="url(#s)"/><circle cx="118" cy="34" r="12" fill="#ffe8a3"/><path d="M0 78 L40 50 L70 70 L105 42 L160 80 L160 100 L0 100Z" fill="#3c6e4f"/><path d="M0 88 L50 70 L90 86 L160 74 L160 100 L0 100Z" fill="#2c4f3a"/></svg>`);
+
+function AdjustTab() {
+  const [sub, setSub] = useState<'add' | 'looks' | 'lut'>('add');
+  const project = useStore(s => s.project)!;
+  useStore(s => s.selection);
+  const [, force] = useState(0);
+  const luts = project.assets.filter(a => a.kind === 'lut');
+  const looks = listLooks();
+  const target = useStore.getState().selection.length ? 'aux clips sélectionnés' : 'sur un nouveau calque de réglage';
+  return (
+    <div className="asset-body">
+      <nav className="subnav" aria-label="Réglages">
+        <button className={sub === 'add' ? 'on' : ''} onClick={() => setSub('add')}>Ajouter un réglage</button>
+        <button className={sub === 'looks' ? 'on' : ''} onClick={() => setSub('looks')}>Mes réglages</button>
+        <button className={sub === 'lut' ? 'on' : ''} onClick={() => setSub('lut')}>LUT</button>
+      </nav>
+      <div className="asset-content">
+        {sub === 'add' && <>
+          <div className="asset-grid">
+            <button className="preset" onClick={() => addAdjustmentLayer()} aria-label="Ajouter un calque de réglage"><Sliders size={20} />Réglage personnalisé</button>
+          </div>
+          <div className="hint">Un calque de réglage colore tout ce qui est en dessous de lui dans la timeline, sur sa durée. Règle-le dans l’inspecteur à droite.</div>
+        </>}
+        {sub === 'looks' && (looks.length ? <div className="col" style={{ gap: 6 }}>
+          {looks.map(l => (
+            <div key={l.id} className="list-row">
+              <Sliders size={14} className="muted" /><span className="grow ellipsis">{l.name}</span>
+              <button className="icon-btn" aria-label={`Supprimer ${l.name}`} onClick={() => { deleteLook(l.id); force(n => n + 1); }}><Trash2 size={13} /></button>
+              <button className="btn sm" onClick={() => applyLook(l)}>Appliquer</button>
+            </div>
+          ))}
+          <div className="hint">S’applique {target}.</div>
+        </div> : <div className="empty" style={{ padding: 20 }}><Sliders size={20} /><div style={{ fontSize: 'var(--fs-sm)' }}>Aucun réglage enregistré. Dans l’inspecteur (onglet Réglages), clique sur « Enregistrer ce réglage ».</div></div>)}
+        {sub === 'lut' && <>
+          <button className="btn" onClick={async () => { const a = await importLuts(); if (a.length) useStore.getState().notify('success', `${a.length} LUT importée${a.length > 1 ? 's' : ''}`); }}><Upload size={14} /> Importer une LUT (.cube)</button>
+          {luts.length > 0 && <div className="col" style={{ gap: 6 }}>
+            {luts.map(l => (
+              <div key={l.id} className="list-row"><Wand2 size={14} className="muted" /><span className="grow ellipsis">{l.name}</span><button className="btn sm" onClick={() => applyLut(l.id)}>Appliquer</button></div>
+            ))}
+          </div>}
+          <div className="hint">S’applique {target}. Intensité réglable dans l’inspecteur.</div>
+        </>}
+      </div>
+    </div>
+  );
 }
 
 function CaptionTab() {
+  const [sub, setSub] = useState<'auto' | 'styles' | 'lyrics' | 'add'>('auto');
   return (
     <div className="asset-body">
-      <nav className="subnav"><button className="on">Sous-titres</button></nav>
+      <nav className="subnav" aria-label="Sous-titres">
+        <button className={sub === 'auto' ? 'on' : ''} onClick={() => setSub('auto')}>Sous-titres auto</button>
+        <button className={sub === 'styles' ? 'on' : ''} onClick={() => setSub('styles')}>Modèles</button>
+        <button className={sub === 'lyrics' ? 'on' : ''} onClick={() => setSub('lyrics')}>Paroles auto</button>
+        <button className={sub === 'add' ? 'on' : ''} onClick={() => setSub('add')}>Ajouter</button>
+      </nav>
       <div className="asset-content">
-        <AutoCaptionsPanel />
-        <hr style={{ border: 0, borderTop: '1px solid var(--c-border)', width: '100%' }} />
-        <button className="btn" onClick={importSubtitles}><Upload size={14} /> Importer un fichier SRT / VTT</button>
-        <button className="btn ghost" onClick={exportSubtitles}>Exporter les textes en SRT</button>
-        <div className="hint">Chaque ligne devient un clip texte modifiable. Pour changer le style de tous : sélectionne-les (⇧-clic) puis modifie dans l’inspecteur.</div>
+        {sub === 'auto' && <AutoCaptionsPanel />}
+        {sub === 'lyrics' && <AutoCaptionsPanel lyrics />}
+        {sub === 'styles' && <CaptionStyles />}
+        {sub === 'add' && <>
+          <button className="btn" onClick={() => {
+            const p = useStore.getState().project!;
+            addText('Nouveau sous-titre', { ...captionStyle(getCaptionStyle(), p.canvas.height > p.canvas.width) });
+            useStore.getState().edit(d => { const id = useStore.getState().selection[0]; const r = op.findClip(d, id); if (r) r.clip.transform.y = d.canvas.height > d.canvas.width ? -0.45 : -0.72; });
+          }}><Plus size={14} /> Ajouter un sous-titre à la main</button>
+          <button className="btn" onClick={importSubtitles}><Upload size={14} /> Importer un fichier SRT / VTT</button>
+          <button className="btn ghost" onClick={exportSubtitles}>Exporter les textes en SRT</button>
+          <div className="hint">Chaque ligne devient un clip texte modifiable.</div>
+        </>}
       </div>
     </div>
+  );
+}
+
+function CaptionStyles() {
+  const [cur, setCur] = useState(getCaptionStyle());
+  const [upper, setUpper] = useState(false);
+  const has = useStore(s => s.project?.tracks.some(t => t.role === 'captions'));
+  const portrait = useStore(s => (s.project?.canvas.height ?? 0) > (s.project?.canvas.width ?? 1));
+  return (
+    <>
+      <div className="asset-grid">
+        {CAPTION_STYLES.map(c => {
+          const s = captionStyle(c.id, portrait);
+          return (
+            <button key={c.id} className={'preset' + (cur === c.id ? ' on' : '')} onClick={() => { setCur(c.id); setCaptionStyle(c.id); if (has) restyleCaptions(c.id, upper); }}
+              style={{ background: '#2a2f3a' }} aria-label={`Style ${c.label}`}>
+              <span style={{ fontFamily: s.font, fontWeight: s.bold ? 700 : 400, color: s.color, fontSize: 17, padding: s.bgOpacity ? '1px 6px' : 0, borderRadius: 3,
+                background: s.bgOpacity ? s.bgColor : undefined, WebkitTextStroke: s.strokeWidth ? `1.2px ${s.strokeColor}` : undefined, textShadow: s.shadow ? '0 1px 3px #000' : undefined }}>Abc</span>
+              <span className="faint" style={{ fontSize: 'var(--fs-xs)' }}>{c.label}</span>
+            </button>
+          );
+        })}
+      </div>
+      <Switch label="Tout en majuscules" checked={upper} onChange={v => { setUpper(v); if (has) restyleCaptions(cur, v); }} />
+      <div className="hint">{has ? 'Cliquer sur un modèle l’applique à tous les sous-titres auto.' : 'Le modèle choisi sera utilisé à la prochaine génération.'}</div>
+    </>
   );
 }

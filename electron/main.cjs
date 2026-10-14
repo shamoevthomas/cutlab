@@ -36,7 +36,7 @@ protocol.registerSchemesAsPrivileged([
 const MIME = { '.mp4': 'video/mp4', '.m4v': 'video/mp4', '.mov': 'video/quicktime', '.webm': 'video/webm', '.mkv': 'video/x-matroska',
   '.mp3': 'audio/mpeg', '.wav': 'audio/wav', '.m4a': 'audio/mp4', '.aac': 'audio/aac', '.flac': 'audio/flac', '.ogg': 'audio/ogg',
   '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.webp': 'image/webp', '.gif': 'image/gif', '.heic': 'image/heic',
-  '.srt': 'text/plain', '.vtt': 'text/vtt', '.txt': 'text/plain' };
+  '.srt': 'text/plain', '.cube': 'text/plain', '.vtt': 'text/vtt', '.txt': 'text/plain' };
 
 const toUrl = (p) => 'media://local/' + encodeURIComponent(p);
 const fromUrl = (u) => decodeURIComponent(new URL(u).pathname.slice(1));
@@ -128,6 +128,7 @@ function registerIpc() {
       audio: [{ name: 'Audio', extensions: ['mp3', 'wav', 'm4a', 'aac', 'flac', 'ogg'] }],
       srt: [{ name: 'Sous-titres', extensions: ['srt', 'vtt', 'txt'] }],
       font: [{ name: 'Polices', extensions: ['ttf', 'otf', 'woff', 'woff2'] }],
+      lut: [{ name: 'LUT 3D', extensions: ['cube'] }],
     }[accept];
     const r = await dialog.showOpenDialog(BrowserWindow.fromWebContents(e.sender), { properties: ['openFile', 'multiSelections'], filters });
     if (r.canceled) return [];

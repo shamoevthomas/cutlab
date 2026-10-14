@@ -10,7 +10,40 @@ const threads = 1;
 (env.backends.onnx as any).wasm.numThreads = threads;
 console.log('[asr] wasm from', (env.backends.onnx as any).wasm.wasmPaths, 'threads', threads);
 
-type Req = { id: number; samples: Float32Array; model: string; language: string | null; device?: string };
+type Req = { id: number; kind?: 'asr'; samples: Float32Array; model: string; language: string | null; device?: string }
+  | { id: number; kind: 'translate'; texts: string[]; from: string; to: string };
+
+// Marian (opus-mt) models available on the hub; other pairs go through English
+const DIRECT = new Set(['fr-en', 'en-fr', 'fr-es', 'en-es', 'fr-de', 'en-de', 'en-it', 'en-ar', 'es-fr', 'de-en', 'es-en', 'it-en', 'ar-en', 'de-fr']);
+const translators = new Map<string, any>();
+async function translator(pair: string, post: (m: any) => void) {
+  let t = translators.get(pair);
+  if (!t) {
+    t = await pipeline('translation', `Xenova/opus-mt-${pair}`, {
+      dtype: 'q8',
+      progress_callback: (p: any) => { if (p.status === 'progress' && p.total) post({ type: 'download', file: pair + '/' + p.file, loaded: p.loaded, total: p.total }); },
+    } as any);
+    translators.set(pair, t);
+  }
+  return t;
+}
+async function translateAll(texts: string[], from: string, to: string, post: (m: any) => void): Promise<string[]> {
+  if (from === to) return texts;
+  const hops = DIRECT.has(`${from}-${to}`) ? [`${from}-${to}`] : [`${from}-en`, `en-${to}`].filter(p => !p.startsWith('en-en') && p !== 'en-en');
+  let cur = texts;
+  for (const pair of hops) {
+    if (pair.split('-')[0] === pair.split('-')[1]) continue;
+    const t = await translator(pair, post);
+    post({ type: 'status', text: `Traduction (${pair})…` });
+    const out: string[] = [];
+    for (let i = 0; i < cur.length; i += 16) {
+      const r = await t(cur.slice(i, i + 16));
+      out.push(...(Array.isArray(r) ? r : [r]).map((x: any) => x.translation_text));
+    }
+    cur = out;
+  }
+  return cur;
+}
 
 let current: { model: string; device: string; asr: any } | null = null;
 
@@ -37,8 +70,14 @@ async function load(model: string, onProgress: (p: any) => void, forced?: string
 }
 
 self.onmessage = async (e: MessageEvent<Req>) => {
-  const { id, samples, model, language, device } = e.data;
-  const post = (m: any) => (self as any).postMessage({ id, ...m });
+  const req = e.data;
+  const post = (m: any) => (self as any).postMessage({ id: req.id, ...m });
+  if (req.kind === 'translate') {
+    try { post({ type: 'done', texts: await translateAll(req.texts, req.from, req.to, post) }); }
+    catch (err: any) { post({ type: 'error', message: err?.message ?? String(err) }); }
+    return;
+  }
+  const { id, samples, model, language, device } = req;
   try {
     console.log('[asr] request', model, 'device', device ?? 'auto', 'samples', samples.length);
     post({ type: 'status', text: 'Chargement du modèle…' });

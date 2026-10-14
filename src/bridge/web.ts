@@ -43,6 +43,7 @@ const ACCEPT = {
   audio: 'audio/*',
   srt: '.srt,.txt,.vtt',
   font: '.ttf,.otf,.woff,.woff2',
+  lut: '.cube',
 };
 
 export async function storeFile(f: File): Promise<PickedFile> {

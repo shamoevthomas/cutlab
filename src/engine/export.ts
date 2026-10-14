@@ -7,6 +7,7 @@ import { Compositor, renderText, TexSource } from './compositor';
 import { evaluate, audioClips, Layer } from './scene';
 import { decodeAudio, loadImage, loadVideo, seekVideo } from './media';
 import { dbToGain } from './player';
+import { loadLut, Lut } from './lut';
 
 export interface ExportSettings {
   height: 720 | 1080 | 1440 | 2160;
@@ -165,6 +166,12 @@ export async function exportProject(
   const scaleProj: Project = { ...p, canvas: { ...p.canvas, width: W, height: H } };
   const videos = new Map<string, HTMLVideoElement>();
   const mattes = new Map<string, HTMLVideoElement>();
+  // every LUT used anywhere is loaded before the first frame
+  const luts = new Map<string, Lut>();
+  for (const t of p.tracks) for (const c of t.clips) for (const e of c.effects) if (e.kind === 'lut' && e.enabled) {
+    const a = p.assets.find(x => x.id === e.params.lutAssetId);
+    if (a && !luts.has(a.id)) luts.set(a.id, await loadLut(a));
+  }
   const images = new Map<string, HTMLImageElement>();
   const assetOf = (id?: string) => p.assets.find(a => a.id === id) as Asset | undefined;
 
@@ -216,7 +223,12 @@ export async function exportProject(
         const mv = mattes.get(L.clip.id);
         return mv ? { el: mv, w: mv.videoWidth, h: mv.videoHeight, key: 'm:' + L.clip.id, dynamic: true, fit: 'contain' } : null;
       };
-      comp.render(p.canvas.background, layers, source, maskSource);
+      const lutOf = (L: Layer) => {
+        const a = assetOf(L.lut?.assetId);
+        const lut = a && luts.get(a.id);
+        return lut && a ? { key: a.id, ...lut } : undefined;
+      };
+      comp.render(p.canvas.background, layers, source, maskSource, lutOf);
       const frame = new VideoFrame(canvas, { timestamp: Math.round(f * frameDur), duration: Math.round(frameDur) });
       venc.encode(frame, { keyFrame: f % (s.fps * 2) === 0 });
       frame.close();

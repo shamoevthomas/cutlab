@@ -1,6 +1,6 @@
 import { denoise, encodeWav, gate } from './model/denoise';
 import { integratedLoudness } from './model/loudness';
-import { timelineAudio16k, transcribe, assetSamples, resampleMono, AsrProgress } from './engine/asr';
+import { timelineAudio16k, transcribe, assetSamples, resampleMono, AsrProgress, translateTexts, LANG_CODES } from './engine/asr';
 import { wordsToCues, fillerRanges, REEL_CUES, LONG_CUES, Word } from './model/captions';
 import { detectSilences, autoThreshold, rmsDb } from './model/silence';
 import { decodeAudio } from './engine/media';
@@ -9,7 +9,8 @@ import { useStore } from './store';
 import { bridge } from './bridge';
 import * as op from './model/ops';
 import { probe } from './engine/media';
-import type { Asset, Track, TrackKind } from './model/schema';
+import type { Asset, Track, TrackKind, TextStyle, Clip, ClipEffect } from './model/schema';
+import { loadLut } from './engine/lut';
 import { newProject, uid, newTrack, newClip, defaultTextStyle } from './model/schema';
 import { parseSubtitles, writeSrt } from './model/srt';
 import type { PickedFile } from './bridge/types';
@@ -226,50 +227,88 @@ export async function saveNow(cover?: string) {
 
 // ---------- phase 2: auto captions & auto-cut ----------
 
-export type CaptionStyle = 'reel' | 'classic' | 'band' | 'yellow';
+export type CaptionStyle = 'reel' | 'classic' | 'band' | 'yellow' | 'green' | 'label' | 'minimal' | 'impact' | 'pink';
 export const CAPTION_STYLES: { id: CaptionStyle; label: string }[] = [
-  { id: 'reel', label: 'Reel (3-4 mots, gros)' },
-  { id: 'classic', label: 'Classique (phrases)' },
-  { id: 'band', label: 'Bandeau noir' },
-  { id: 'yellow', label: 'Jaune contour' },
+  { id: 'reel', label: 'Reel' },
+  { id: 'classic', label: 'Classique' },
+  { id: 'band', label: 'Bandeau' },
+  { id: 'yellow', label: 'Jaune' },
+  { id: 'green', label: 'Vert' },
+  { id: 'label', label: 'Étiquette' },
+  { id: 'minimal', label: 'Discret' },
+  { id: 'impact', label: 'Impact' },
+  { id: 'pink', label: 'Rose' },
 ];
 
-function captionStyle(id: CaptionStyle, portrait: boolean) {
-  const base = { ...defaultTextStyle(), shadow: false };
+export function captionStyle(id: CaptionStyle, portrait: boolean): TextStyle {
+  const base: TextStyle = { ...defaultTextStyle(), shadow: false, bold: true };
+  const big = portrait ? 78 : 64, mid = portrait ? 54 : 46;
   switch (id) {
-    case 'reel': return { ...base, size: portrait ? 78 : 64, bold: true, strokeWidth: 7, strokeColor: '#000000', font: 'Poppins' };
-    case 'classic': return { ...base, size: portrait ? 54 : 46, bold: true, strokeWidth: 4, strokeColor: '#000000' };
-    case 'band': return { ...base, size: portrait ? 52 : 44, bold: true, bgColor: '#000000', bgOpacity: 80 };
-    case 'yellow': return { ...base, size: portrait ? 72 : 60, bold: true, color: '#ffd23f', strokeWidth: 7, strokeColor: '#000000', font: 'Poppins' };
+    case 'reel': return { ...base, size: big, strokeWidth: 7, strokeColor: '#000000', font: 'Poppins' };
+    case 'classic': return { ...base, size: mid, strokeWidth: 4, strokeColor: '#000000' };
+    case 'band': return { ...base, size: mid, bgColor: '#000000', bgOpacity: 80 };
+    case 'yellow': return { ...base, size: big, color: '#ffd23f', strokeWidth: 7, strokeColor: '#000000', font: 'Poppins' };
+    case 'green': return { ...base, size: big, color: '#3ee08f', strokeWidth: 7, strokeColor: '#06120b', font: 'Poppins' };
+    case 'label': return { ...base, size: mid, color: '#0e0f12', bgColor: '#ffffff', bgOpacity: 100, font: 'Poppins' };
+    case 'minimal': return { ...base, size: mid - 6, bold: false, shadow: true };
+    case 'impact': return { ...base, size: big + 10, font: 'Anton', strokeWidth: 6, strokeColor: '#000000' };
+    case 'pink': return { ...base, size: big, color: '#ff4fd8', strokeWidth: 7, strokeColor: '#ffffff', font: 'Poppins' };
   }
 }
 
-export async function generateCaptions(opts: { model: string; language: string | null; style: CaptionStyle; upper: boolean }, onProgress: (p: AsrProgress) => void) {
+export interface CaptionOptions {
+  model: string; language: string | null; style: CaptionStyle; upper: boolean;
+  translateTo?: string | null;     // bilingual captions: second line in this language
+  replace: boolean;                // remove the previous auto captions
+  lyrics?: boolean;                // song lyrics instead of speech
+}
+
+export async function generateCaptions(opts: CaptionOptions, onProgress: (p: AsrProgress) => void) {
   const p = st().project;
   if (!p) return 0;
   onProgress({ phase: 'audio', text: 'Préparation du son de la timeline…' });
   const samples = await timelineAudio16k(p);
   if (!samples) throw new Error('Aucun son dans la timeline');
   const words = await transcribe(samples, opts.model, opts.language, onProgress);
-  if (!words.length) throw new Error('Aucune parole détectée');
+  if (!words.length) throw new Error(opts.lyrics ? 'Aucune parole chantée détectée' : 'Aucune parole détectée');
   const portrait = p.canvas.height > p.canvas.width;
-  const cues = wordsToCues(words, { ...(opts.style === 'reel' || opts.style === 'yellow' ? REEL_CUES : LONG_CUES), upper: opts.upper });
-  const style = captionStyle(opts.style, portrait);
+  const short = !opts.lyrics && (opts.style === 'reel' || opts.style === 'yellow');
+  const cues = wordsToCues(words, { ...(short ? REEL_CUES : LONG_CUES), upper: opts.upper });
+  let second: string[] | null = null;
+  if (opts.translateTo) {
+    const from = (opts.language && LANG_CODES[opts.language]) || 'fr';
+    second = await translateTexts(cues.map(c => c.text), from, opts.translateTo, onProgress);
+  }
+  const style = { ...captionStyle(opts.style, portrait), ...(opts.lyrics ? { italic: true } : {}), ...(second ? { size: Math.round(captionStyle(opts.style, portrait).size * 0.8) } : {}) };
   st().edit(d => {
-    d.tracks = d.tracks.filter(t => t.role !== 'captions');
+    if (opts.replace) d.tracks = d.tracks.filter(t => t.role !== 'captions');
     const tracks: Track[] = [];
-    for (const cue of cues) {
+    cues.forEach((cue, i) => {
       const start = Math.round(cue.start * 1e6), dur = Math.max(op.MIN_CLIP_US, Math.round((cue.end - cue.start) * 1e6));
       let tr = tracks.find(t => op.isFree(t, start, dur));
       if (!tr) { tr = { ...newTrack('text'), role: 'captions' }; tracks.push(tr); }
+      const content = (opts.lyrics ? '♪ ' : '') + cue.text + (second ? '\n' + second[i] : '');
       const c = newClip({ startUs: start, durationUs: dur, label: cue.text,
-        text: { content: cue.text, style: { ...style }, words: cue.words.map(w => ({ t0Us: Math.round((w.start - cue.start) * 1e6), t1Us: Math.round((w.end - cue.start) * 1e6), text: w.text })) } });
+        text: { content, style: { ...style }, words: second ? undefined : cue.words.map(w => ({ t0Us: Math.round((w.start - cue.start) * 1e6), t1Us: Math.round((w.end - cue.start) * 1e6), text: w.text })) } });
       c.transform.y = portrait ? -0.45 : -0.72;
       tr.clips.push(c);
-    }
+    });
     d.tracks.push(...tracks);
   });
   return cues.length;
+}
+
+/** Apply one caption style to every auto caption. */
+export function restyleCaptions(style: CaptionStyle, upper: boolean) {
+  const p = st().project!;
+  const portrait = p.canvas.height > p.canvas.width;
+  const s = captionStyle(style, portrait);
+  st().edit(d => {
+    for (const t of d.tracks) if (t.role === 'captions') for (const c of t.clips) if (c.text) {
+      c.text.style = { ...s };
+      c.text.content = upper ? c.text.content.toUpperCase() : c.text.content;
+    }
+  });
 }
 
 export interface CutPlan { clipId: string; removeSrc: [number, number][]; removedUs: number; count: number }
@@ -495,4 +534,67 @@ export async function relinkAsset(assetId: string) {
     Object.assign(x, { path: a.path, url: a.url, width: a.width, height: a.height, durationUs: a.durationUs ?? x.durationUs, thumb: a.thumb, hasAudio: a.hasAudio });
   });
   st().notify('success', `${files[0].name} reconnecté`);
+}
+
+// ---------- adjustment layers, LUTs, saved looks ----------
+
+export function addAdjustmentLayer(effects: ClipEffect[] = []) {
+  const s = st();
+  let id = '';
+  s.edit(p => {
+    const dur = Math.min(5_000_000, Math.max(3_000_000, op.projectDuration(p) - s.playheadUs));
+    let track = [...p.tracks].reverse().find(t => t.kind === 'adjustment' && op.isFree(t, s.playheadUs, dur));
+    if (!track) { track = newTrack('adjustment'); p.tracks.push(track); }
+    const c = newClip({ startUs: s.playheadUs, durationUs: dur, label: 'Réglage', effects: effects.map(e => ({ ...e, id: uid(), params: { ...e.params } })) });
+    track.clips.push(c); op.sortTrack(track);
+    id = c.id;
+  });
+  s.select([id]);
+}
+
+export async function importLuts(): Promise<Asset[]> {
+  const files = await bridge.pickFiles('lut');
+  const out: Asset[] = [];
+  for (const f of files) {
+    try {
+      const a: Asset = { id: uid(), kind: 'lut', name: f.name.replace(/\.cube$/i, ''), path: f.path, url: f.url, hasAudio: false };
+      await loadLut(a);   // validates the file
+      out.push(a);
+    } catch (e: any) { st().notify('error', `${f.name} : ${e?.message ?? e}`); }
+  }
+  if (out.length) st().edit(p => { p.assets.push(...out); });
+  return out;
+}
+
+/** Put a LUT on the selected visual clips, or on a new adjustment layer when nothing is selected. */
+export function applyLut(lutAssetId: string | null) {
+  const s = st();
+  const p = s.project!;
+  const refs = s.selection.map(id => op.findClip(p, id)).filter(r => r && r.track.kind !== 'audio' && !r.clip.text) as op.ClipRef[];
+  const effect: ClipEffect = { id: uid(), kind: 'lut', enabled: true, params: { lutAssetId: lutAssetId ?? '', intensity: 100 } };
+  if (!refs.length) { if (lutAssetId) addAdjustmentLayer([effect]); return; }
+  s.edit(d => {
+    for (const r of refs) {
+      const c = op.findClip(d, r.clip.id)!.clip;
+      c.effects = c.effects.filter(e => e.kind !== 'lut');
+      if (lutAssetId) c.effects.push({ ...effect, id: uid(), params: { ...effect.params } });
+    }
+  });
+}
+
+export interface Look { id: string; name: string; effects: ClipEffect[] }
+const LOOKS_KEY = 'cutlab.looks';
+export function listLooks(): Look[] { try { return JSON.parse(localStorage.getItem(LOOKS_KEY) ?? '[]'); } catch { return []; } }
+export function saveLook(name: string, clip: Clip) {
+  const effects = clip.effects.filter(e => ['adjust', 'filter', 'lut'].includes(e.kind));
+  const looks = [...listLooks().filter(l => l.name !== name), { id: uid(), name, effects }];
+  try { localStorage.setItem(LOOKS_KEY, JSON.stringify(looks)); } catch { /* ignore */ }
+}
+export function deleteLook(id: string) { try { localStorage.setItem(LOOKS_KEY, JSON.stringify(listLooks().filter(l => l.id !== id))); } catch { /* ignore */ } }
+export function applyLook(look: Look) {
+  const s = st();
+  const p = s.project!;
+  const refs = s.selection.map(id => op.findClip(p, id)).filter(r => r && r.track.kind !== 'audio' && !r.clip.text) as op.ClipRef[];
+  if (!refs.length) { addAdjustmentLayer(look.effects); return; }
+  s.edit(d => { for (const r of refs) { const c = op.findClip(d, r.clip.id)!.clip; c.effects = [...c.effects.filter(e => !['adjust', 'filter', 'lut'].includes(e.kind)), ...look.effects.map(e => ({ ...e, id: uid(), params: { ...e.params } }))]; } });
 }
