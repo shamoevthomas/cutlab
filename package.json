@@ -14,7 +14,9 @@
     "test": "vitest run",
     "e2e": "playwright test",
     "tokens": "node scripts/tokens.mjs",
-    "contrast": "python3 ~/.claude/skills/replica-design/contrast.py replica/design/tokens.json"
+    "contrast": "python3 ~/.claude/skills/replica-design/contrast.py replica/design/tokens.json",
+    "postinstall": "node scripts/copy-runtime.mjs",
+    "prebuild": "node scripts/copy-runtime.mjs"
   },
   "build": {
     "appId": "com.teka.cutlab",
@@ -30,7 +32,9 @@
       ],
       "identity": null
     },
-    "asarUnpack": ["node_modules/ffmpeg-static/**"]
+    "asarUnpack": [
+      "node_modules/ffmpeg-static/**"
+    ]
   },
   "dependencies": {
     "@huggingface/transformers": "^3.0.2",
