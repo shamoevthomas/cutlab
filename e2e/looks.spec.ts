@@ -1,9 +1,10 @@
 // Adjustment layer + LUT, filter previews, categorised transitions (iris), checked on the exported pixels.
-import { test, expect, _electron as electron, ElectronApplication, Page } from '@playwright/test';
+import { test, expect, ElectronApplication, Page } from '@playwright/test';
 import { execFileSync } from 'node:child_process';
 import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
+import { launchApp, FFMPEG } from './helpers';
 
 const FIX = path.resolve('e2e/fixtures');
 const SHOTS = path.resolve('replica/test/shots');
@@ -17,7 +18,7 @@ const select = (ids: string[]) => page.evaluate((ids) => (window as any).__cutla
 
 test.beforeAll(async () => {
   home = mkdtempSync(path.join(tmpdir(), 'cutlab-home-'));
-  app = await electron.launch({ args: ['.', '--no-sandbox'], env: { ...process.env, HOME: home } as any });
+  app = await launchApp(home);
   page = await app.firstWindow();
   await page.setViewportSize({ width: 1600, height: 1000 });
   page.on('pageerror', e => console.log('PAGE ERROR', e.message));
@@ -78,7 +79,7 @@ test('adjustment layer with LUT, filters with previews, iris transition', async 
   await page.getByLabel('Résolution').selectOption('720');
   await page.getByRole('dialog').getByRole('button', { name: 'Exporter' }).click();
   await expect(page.getByText('Vidéo exportée')).toBeVisible({ timeout: 150_000 });
-  const rgb = (t: number, x: number, y: number) => [...execFileSync('ffmpeg', ['-v', 'error', '-ss', String(t), '-i', out, '-frames:v', '1', '-vf', `crop=8:8:${x}:${y},scale=1:1`, '-f', 'rawvideo', '-pix_fmt', 'rgb24', '-'])];
+  const rgb = (t: number, x: number, y: number) => [...execFileSync(FFMPEG, ['-v', 'error', '-ss', String(t), '-i', out, '-frames:v', '1', '-vf', `crop=8:8:${x}:${y},scale=1:1`, '-f', 'rawvideo', '-pix_fmt', 'rgb24', '-'])];
   const blueSwapped = rgb(1, 636, 356);
   console.log('t=1 centre', blueSwapped, '| t=3 corner', rgb(3, 20, 20), 'centre', rgb(3, 636, 356));
   expect(blueSwapped[0]).toBeGreaterThan(200); expect(blueSwapped[2]).toBeLessThan(40);   // blue image → red through the LUT

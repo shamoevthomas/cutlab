@@ -1,9 +1,10 @@
 // End-to-end: drives the real Electron app (renderer + main process) with native dialogs stubbed.
-import { test, expect, _electron as electron, ElectronApplication, Page } from '@playwright/test';
+import { test, expect, ElectronApplication, Page } from '@playwright/test';
 import { execFileSync } from 'node:child_process';
 import { mkdtempSync, existsSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
+import { launchApp, FFMPEG, FFPROBE } from './helpers';
 
 const FIX = path.resolve('e2e/fixtures');
 const SHOTS = path.resolve('replica/test/shots');
@@ -17,7 +18,7 @@ async function stubOpen(files: string[]) {
 
 test.beforeAll(async () => {
   home = mkdtempSync(path.join(tmpdir(), 'cutlab-home-'));
-  app = await electron.launch({ args: ['.', '--no-sandbox', ...(process.env.CUTLAB_TEST_INSECURE ? ['--ignore-certificate-errors'] : [])], env: { ...process.env, HOME: home } as any });
+  app = await launchApp(home);
   page = await app.firstWindow();
   await page.setViewportSize({ width: 1600, height: 1000 });
   page.on('pageerror', e => console.log('PAGE ERROR', e.message));
@@ -111,7 +112,7 @@ test('home → create → import → edit → export → reopen', async () => {
   await expect(page.getByText('Vidéo exportée')).toBeVisible({ timeout: 150_000 });
   expect(existsSync(out) && statSync(out).size > 10_000).toBe(true);
 
-  const probe = JSON.parse(execFileSync('ffprobe', ['-v', 'error', '-show_streams', '-show_format', '-of', 'json', out]).toString());
+  const probe = JSON.parse(execFileSync(FFPROBE, ['-v', 'error', '-show_streams', '-show_format', '-of', 'json', out]).toString());
   const v = probe.streams.find((s: any) => s.codec_type === 'video');
   const a = probe.streams.find((s: any) => s.codec_type === 'audio');
   expect(v.codec_name).toBe('h264');
@@ -121,7 +122,7 @@ test('home → create → import → edit → export → reopen', async () => {
 
   // frame at 1 s must be greyscale (filter) and frame at 8 s colourful (clipB bars)
   const sat = (t: number, crop = 'iw:ih:0:0') => {
-    const raw = execFileSync('ffmpeg', ['-v', 'error', '-ss', String(t), '-i', out, '-frames:v', '1', '-vf', `crop=${crop},scale=64:36`, '-f', 'rawvideo', '-pix_fmt', 'rgb24', '-']);
+    const raw = execFileSync(FFMPEG, ['-v', 'error', '-ss', String(t), '-i', out, '-frames:v', '1', '-vf', `crop=${crop},scale=64:36`, '-f', 'rawvideo', '-pix_fmt', 'rgb24', '-']);
     let s = 0;
     for (let i = 0; i < raw.length; i += 3) s += Math.max(raw[i], raw[i + 1], raw[i + 2]) - Math.min(raw[i], raw[i + 1], raw[i + 2]);
     return s / (raw.length / 3);

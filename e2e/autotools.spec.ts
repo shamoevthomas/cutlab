@@ -1,8 +1,9 @@
 // Phase 2: silence removal and local Whisper captions on a real speech rush.
-import { test, expect, _electron as electron, ElectronApplication, Page } from '@playwright/test';
+import { test, expect, ElectronApplication, Page } from '@playwright/test';
 import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
+import { launchApp } from './helpers';
 
 const FIX = path.resolve('e2e/fixtures');
 const SHOTS = path.resolve('replica/test/shots');
@@ -11,7 +12,7 @@ let page: Page;
 
 test.beforeAll(async () => {
   const home = mkdtempSync(path.join(tmpdir(), 'cutlab-home-'));
-  app = await electron.launch({ args: ['.', '--no-sandbox', ...(process.env.CUTLAB_TEST_INSECURE ? ['--ignore-certificate-errors'] : [])], env: { ...process.env, HOME: home } as any });
+  app = await launchApp(home);
   page = await app.firstWindow();
   await page.setViewportSize({ width: 1600, height: 1000 });
   page.on('pageerror', e => console.log('PAGE ERROR', e.message));

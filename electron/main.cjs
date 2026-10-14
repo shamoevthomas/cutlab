@@ -25,7 +25,8 @@ function ffmpeg(args, durationS, onProgress) {
   });
 }
 
-const ROOT = path.join(app.getPath('videos'), 'CutLab');
+// CUTLAB_DATA_DIR overrides the data folder (tests, portable installs)
+const ROOT = process.env.CUTLAB_DATA_DIR || path.join(app.getPath('videos'), 'CutLab');
 const PROJECTS = path.join(ROOT, 'Projects');
 
 protocol.registerSchemesAsPrivileged([
@@ -167,14 +168,23 @@ function registerIpc() {
     return out;
   });
   ipcMain.on('files:reveal', (_e, p) => shell.showItemInFolder(p));
+  ipcMain.on('files:openData', async () => { await fsp.mkdir(PROJECTS, { recursive: true }); shell.openPath(PROJECTS); });
 }
 
 function createWindow() {
+  const mac = process.platform === 'darwin';
   const win = new BrowserWindow({
     width: 1600, height: 1000, minWidth: 1100, minHeight: 700,
-    backgroundColor: '#0e0f12', titleBarStyle: 'hiddenInset', trafficLightPosition: { x: 14, y: 14 },
+    backgroundColor: '#0e0f12',
+    icon: path.join(__dirname, '..', 'build', 'icon.png'),
+    // macOS: traffic lights inset in our top bar. Windows/Linux: native buttons drawn over our dark top bar.
+    ...(mac
+      ? { titleBarStyle: 'hiddenInset', trafficLightPosition: { x: 14, y: 14 } }
+      : { titleBarStyle: 'hidden', titleBarOverlay: { color: '#17181c', symbolColor: '#eceef2', height: 44 } }),
     webPreferences: { preload: path.join(__dirname, 'preload.cjs'), contextIsolation: true, sandbox: false },
   });
+  // Windows/Linux: no menu bar (all shortcuts are handled by the editor; text fields keep Ctrl+C/V natively)
+  if (!mac) win.removeMenu();
   if (process.env.CUTLAB_DEV) win.loadURL('http://localhost:5173');
   else win.loadURL('app://cutlab/index.html');
 }

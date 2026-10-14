@@ -16,15 +16,24 @@
     "tokens": "node scripts/tokens.mjs",
     "contrast": "python3 ~/.claude/skills/replica-design/contrast.py replica/design/tokens.json",
     "postinstall": "node scripts/copy-runtime.mjs",
-    "prebuild": "node scripts/copy-runtime.mjs"
+    "prebuild": "node scripts/copy-runtime.mjs",
+    "dist:win": "vite build && electron-builder --win"
   },
   "build": {
     "appId": "com.teka.cutlab",
     "productName": "CutLab",
+    "directories": {
+      "output": "release"
+    },
     "files": [
       "dist/**",
-      "electron/**"
+      "electron/**",
+      "build/icon.png"
     ],
+    "asarUnpack": [
+      "node_modules/ffmpeg-static/**"
+    ],
+    "icon": "build/icon.png",
     "mac": {
       "category": "public.app-category.video",
       "target": [
@@ -32,9 +41,38 @@
       ],
       "identity": null
     },
-    "asarUnpack": [
-      "node_modules/ffmpeg-static/**"
-    ]
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        }
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "shortcutName": "CutLab",
+      "artifactName": "CutLab-Setup-${version}.${ext}"
+    },
+    "portable": {
+      "artifactName": "CutLab-Portable-${version}.${ext}"
+    },
+    "linux": {
+      "target": [
+        "AppImage"
+      ],
+      "category": "AudioVideo"
+    }
   },
   "dependencies": {
     "@huggingface/transformers": "^3.0.2",
@@ -56,6 +94,7 @@
     "cross-env": "^7.0.3",
     "electron": "^33.2.1",
     "electron-builder": "^25.1.8",
+    "ffprobe-static": "^3.1.0",
     "typescript": "^5.6.3",
     "vite": "^6.0.7",
     "vitest": "^2.1.8",

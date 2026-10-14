@@ -2,18 +2,46 @@
 
 Personal video editor for Thomas. It rebuilds the features of CapCut desktop, Pro features included, with no paywall, no account and no watermark. Internal use only, never distributed. None of CapCut's code, assets or libraries is used.
 
-## Install on the Mac (first time)
+## Install
 
-```bash
-# Node 20+ required: https://nodejs.org
-cd capcut-clone
+### Windows
+
+**Easiest:** download the installer built by GitHub.
+1. On GitHub, open **Actions → build → the latest green run**.
+2. Download **CutLab-Windows**. It contains:
+   - `CutLab-Setup-x.y.z.exe`: the installer, with a desktop shortcut.
+   - `CutLab-Portable-x.y.z.exe`: runs without installing.
+3. The `.exe` is not signed, so the first time SmartScreen shows a warning. Click **More info → Run anyway**.
+
+**From the code** (needs Node 20+ from https://nodejs.org and Git for Windows):
+
+```powershell
+git clone https://github.com/shamoevthomas/cutlab.git
+cd cutlab
 npm install
-npm run electron        # builds the interface, then opens the app
+npm run electron        # opens the app
+npm run dist:win        # makes the installer in release\
 ```
 
-`npm run dist:mac` makes a `.dmg` in `dist/`. It is unsigned, so the first time you open it you need right-click → Open.
+### macOS
 
-Projects are saved in `~/Movies/CutLab/Projects/` (one folder per project, `project.json` + cover + 5 backups). Your video files stay where they are.
+The **CutLab-macOS** artifact on the same Actions page contains the `.dmg`. It is unsigned, so the first time you open it, right-click → Open.
+
+From the code:
+
+```bash
+git clone https://github.com/shamoevthomas/cutlab.git && cd cutlab
+npm install
+npm run electron        # or: npm run dist:mac
+```
+
+### Where projects are stored
+
+Projects are saved in your **Videos** folder:
+- `C:\Users\<you>\Videos\CutLab\Projects` on Windows.
+- `~/Movies/CutLab/Projects` on Mac.
+
+Each project is its own folder, with `project.json`, the cover and 5 backups. Your video files stay where they are. The `CUTLAB_DATA_DIR` environment variable moves the data folder elsewhere.
 
 ## Develop
 
@@ -22,7 +50,7 @@ Projects are saved in `~/Movies/CutLab/Projects/` (one folder per project, `proj
 | `npm run dev` | web version in the browser (projects stored in the browser) |
 | `npm run electron:dev` | desktop app with hot reload |
 | `npm test` | unit tests (timeline model, subtitles) |
-| `xvfb-run -a npx playwright test` (Linux) / `npx playwright test` (Mac) | end-to-end test in the real Electron app: import → edit → 720p export checked with ffprobe |
+| `npx playwright test` (Windows / Mac) · `xvfb-run -a npx playwright test` (Linux) | end-to-end test in the real Electron app: import → edit → 720p export checked with ffprobe |
 | `npm run tokens` | regenerates `src/styles/tokens.css` from `replica/design/tokens.json` |
 
 ## Architecture

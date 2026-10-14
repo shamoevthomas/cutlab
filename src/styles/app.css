@@ -273,3 +273,11 @@ input[type=color] { width: 30px; height: 24px; padding: 0; border: 1px solid var
 .asset-tabs-wrap .asset-tabs { border-bottom: 0; flex: 1; }
 .tab-scroll { flex: none; width: 20px; border: 0; background: var(--c-surface); color: var(--c-text-faint); cursor: pointer; display: grid; place-items: center; }
 .tab-scroll:hover { color: var(--c-text); background: var(--c-surface-2); }
+
+/* window chrome per platform */
+.home { position: relative; }
+.home-drag { position: absolute; top: 0; left: 0; right: 0; height: 40px; z-index: 3; }
+.home aside, .home main { position: relative; z-index: 2; }
+.home main { padding-top: 44px; }
+html[data-platform="win32"] .topbar, html[data-platform="linux"] .topbar { padding: 0 150px 0 12px; }
+html[data-platform="win32"] .home aside, html[data-platform="linux"] .home aside { padding-top: 20px; }

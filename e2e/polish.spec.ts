@@ -1,9 +1,10 @@
 // ProRes import via ffmpeg, noise reduction, crop, MOV/AAC export, missing media + relink.
-import { test, expect, _electron as electron, ElectronApplication, Page } from '@playwright/test';
+import { test, expect, ElectronApplication, Page } from '@playwright/test';
 import { execFileSync, spawnSync } from 'node:child_process';
 import { mkdtempSync, copyFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
+import { launchApp, FFMPEG, FFPROBE } from './helpers';
 
 const FIX = path.resolve('e2e/fixtures');
 const SHOTS = path.resolve('replica/test/shots');
@@ -12,7 +13,7 @@ let page: Page;
 let home: string;
 
 async function launch() {
-  app = await electron.launch({ args: ['.', '--no-sandbox'], env: { ...process.env, HOME: home } as any });
+  app = await launchApp(home);
   page = await app.firstWindow();
   await page.setViewportSize({ width: 1600, height: 1000 });
   page.on('pageerror', e => console.log('PAGE ERROR', e.message));
@@ -21,7 +22,7 @@ const stubOpen = (files: string[]) => app.evaluate(({ dialog }, files) => { (dia
 const stubSave = (file: string) => app.evaluate(({ dialog }, f) => { (dialog as any).showSaveDialog = async () => ({ canceled: false, filePath: f }); }, file);
 const state = () => page.evaluate(() => (window as any).__cutlab.getState().project);
 function volume(file: string, ss: number, t: number): number {
-  const r = spawnSync('ffmpeg', ['-hide_banner', '-ss', String(ss), '-t', String(t), '-i', file, '-af', 'volumedetect', '-f', 'null', '-']);
+  const r = spawnSync(FFMPEG, ['-hide_banner', '-ss', String(ss), '-t', String(t), '-i', file, '-af', 'volumedetect', '-f', 'null', '-']);
   return Number(/mean_volume: (-?[\d.]+)/.exec(r.stderr.toString())![1]);
 }
 
@@ -70,7 +71,7 @@ test('ProRes, noise reduction, crop, MOV export, relink', async () => {
   await expect(page.getByText('Vidéo exportée')).toBeVisible({ timeout: 200_000 });
   await page.getByRole('button', { name: 'Terminé' }).click();
   const mov = path.join(home, 'polish.mov');
-  const probe = JSON.parse(execFileSync('ffprobe', ['-v', 'error', '-show_streams', '-show_format', '-of', 'json', mov]).toString());
+  const probe = JSON.parse(execFileSync(FFPROBE, ['-v', 'error', '-show_streams', '-show_format', '-of', 'json', mov]).toString());
   expect(probe.format.format_name).toContain('mov');
   expect(probe.streams.find((s: any) => s.codec_type === 'audio').codec_name).toBe('aac');
   // noise in the 1.8 s pause (6.2–7.9 s) must be much lower than in the source
@@ -78,13 +79,13 @@ test('ProRes, noise reduction, crop, MOV export, relink', async () => {
   console.log('noise in pause: before', before, 'dB, after', after, 'dB');
   expect(after).toBeLessThan(before - 8);
   // crop: the 1:1 square is 720 px wide in a 1280 frame → columns at x=200 are black, centre is not
-  const px = (x: number) => [...execFileSync('ffmpeg', ['-v', 'error', '-ss', '2', '-i', mov, '-frames:v', '1', '-vf', `crop=4:4:${x}:358,scale=1:1`, '-f', 'rawvideo', '-pix_fmt', 'rgb24', '-'])];
+  const px = (x: number) => [...execFileSync(FFMPEG, ['-v', 'error', '-ss', '2', '-i', mov, '-frames:v', '1', '-vf', `crop=4:4:${x}:358,scale=1:1`, '-f', 'rawvideo', '-pix_fmt', 'rgb24', '-'])];
   expect(Math.max(...px(200))).toBeLessThan(20);
   expect(Math.max(...px(640))).toBeGreaterThan(40);
 
   // relink: delete the file, reopen → missing; reconnect → back
   await page.getByRole('button', { name: /Accueil/ }).click();
-  rmSync(movable);
+  rmSync(movable, { maxRetries: 20, retryDelay: 250 });   // Windows may hold the file a moment longer
   await page.getByText('Polish').click();
   await expect(page.getByText('Fichier introuvable').first()).toBeVisible();
   await page.screenshot({ path: `${SHOTS}/12-missing-media.png` });

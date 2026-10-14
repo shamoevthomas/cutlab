@@ -5,3 +5,4 @@ playwright-report/
 *.tmp.mjs
 public/ort/
 public/mediapipe/
+release/

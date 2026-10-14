@@ -1,0 +1,65 @@
+# Builds and tests CutLab on real Windows and macOS machines, then packages the installers.
+# Download them from the run page (Actions → the run → Artifacts).
+name: build
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  app:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    env:
+      CSC_IDENTITY_AUTO_DISCOVERY: 'false'   # unsigned builds (personal use)
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install
+        run: npm ci
+
+      - name: Unit tests
+        run: npm test
+
+      - name: Build interface
+        run: npm run build
+
+      - name: End-to-end tests (real Electron app)
+        run: npx playwright test
+
+      - name: Screenshots and traces
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-screens-${{ matrix.os }}
+          path: |
+            replica/test/shots/
+            test-results/
+          if-no-files-found: ignore
+
+      - name: Package (Windows installer + portable)
+        if: runner.os == 'Windows'
+        run: npx electron-builder --win --publish never
+
+      - name: Package (macOS dmg)
+        if: runner.os == 'macOS'
+        run: npx electron-builder --mac --publish never
+
+      - name: Upload app
+        uses: actions/upload-artifact@v4
+        with:
+          name: CutLab-${{ runner.os }}
+          path: |
+            release/*.exe
+            release/*.dmg
+          if-no-files-found: error

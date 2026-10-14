@@ -2,6 +2,8 @@ const { contextBridge, ipcRenderer, webUtils } = require('electron');
 
 contextBridge.exposeInMainWorld('cutlab', {
   kind: 'electron',
+  platform: process.platform,
+  openDataFolder: () => ipcRenderer.send('files:openData'),
   listProjects: () => ipcRenderer.invoke('projects:list'),
   loadProject: (id) => ipcRenderer.invoke('projects:load', id),
   saveProject: (p, cover) => ipcRenderer.invoke('projects:save', p, cover),

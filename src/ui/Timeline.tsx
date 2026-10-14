@@ -10,6 +10,7 @@ import { buildPeaks, buildStrip, getPeaks, getStrip, PEAKS_PER_SEC } from '../en
 import { addAssetAtPlayhead, addMarker, deleteSelection, deleteSide, duplicateSelection, importFiles, splitAtPlayhead, copySelection, paste, toggleEnabled } from '../actions';
 import { fmtDur } from './common';
 import { AutoCutModal } from './AutoTools';
+import { kb } from '../platform';
 
 const LEFT_PAD = 12;     // px before t=0
 const SNAP_PX = 8;
@@ -202,7 +203,7 @@ export function Timeline() {
     setDrag({ kind: 'scrub' });
   };
 
-  // ---------- drag & drop from the asset panel / Finder ----------
+  // ---------- drag & drop from the asset panel / the file manager ----------
   const onDragOver = (e: React.DragEvent) => {
     if (!e.dataTransfer.types.includes('application/x-cutlab-asset') && !e.dataTransfer.types.includes('Files')) return;
     e.preventDefault();
@@ -239,14 +240,14 @@ export function Timeline() {
         <button className="icon-btn" aria-pressed={!blade} title="Sélection (A)" aria-label="Outil sélection" onClick={() => setBlade(false)}><MousePointer2 size={16} /></button>
         <button className="icon-btn" aria-pressed={blade} title="Lame : clic pour couper (B)" aria-label="Outil lame" onClick={() => setBlade(true)}><Scissors size={16} /></button>
         <span className="sep" />
-        <button className="icon-btn" disabled={!past} title="Annuler (⌘Z)" aria-label="Annuler" onClick={() => st().undo()}><Undo2 size={16} /></button>
-        <button className="icon-btn" disabled={!future} title="Rétablir (⇧⌘Z)" aria-label="Rétablir" onClick={() => st().redo()}><Redo2 size={16} /></button>
+        <button className="icon-btn" disabled={!past} title={kb("Annuler (⌘Z)")} aria-label="Annuler" onClick={() => st().undo()}><Undo2 size={16} /></button>
+        <button className="icon-btn" disabled={!future} title={kb("Rétablir (⇧⌘Z)")} aria-label="Rétablir" onClick={() => st().redo()}><Redo2 size={16} /></button>
         <span className="sep" />
-        <button className="icon-btn" disabled={!canSplit} title="Couper à la tête de lecture (⌘B)" aria-label="Couper" onClick={splitAtPlayhead}><SplitIcon /></button>
+        <button className="icon-btn" disabled={!canSplit} title={kb("Couper à la tête de lecture (⌘B)")} aria-label="Couper" onClick={splitAtPlayhead}><SplitIcon /></button>
         <button className="icon-btn" disabled={!canSplit} title="Supprimer à gauche (Q)" aria-label="Supprimer à gauche" onClick={() => deleteSide('left')}><ArrowLeftToLine size={16} /></button>
         <button className="icon-btn" disabled={!canSplit} title="Supprimer à droite (W)" aria-label="Supprimer à droite" onClick={() => deleteSide('right')}><ArrowRightToLine size={16} /></button>
         <button className="icon-btn" disabled={!selection.length} title="Supprimer (⌫)" aria-label="Supprimer" onClick={() => deleteSelection()}><Trash2 size={16} /></button>
-        <button className="icon-btn" disabled={!selection.length} title="Dupliquer (⌘D)" aria-label="Dupliquer" onClick={duplicateSelection}><Copy size={16} /></button>
+        <button className="icon-btn" disabled={!selection.length} title={kb("Dupliquer (⌘D)")} aria-label="Dupliquer" onClick={duplicateSelection}><Copy size={16} /></button>
         <button className="icon-btn" title="Repère (M)" aria-label="Ajouter un repère" onClick={addMarker}><Bookmark size={16} /></button>
         <span className="sep" />
         <button className="btn sm ghost" title="Coupe automatique des blancs" onClick={() => setAutoCut(true)} disabled={!project.tracks.some(t => t.clips.some(c => c.assetId))}><Scissors size={14} /> Coupe des blancs</button>
@@ -258,12 +259,12 @@ export function Timeline() {
         <button className="icon-btn" aria-pressed={snapping} title="Magnétisme (N)" aria-label="Magnétisme" onClick={() => st().set('snapping', !snapping)}><Crosshair size={16} /></button>
         <button className="icon-btn" aria-pressed={linkage} title="Lier audio et vidéo" aria-label="Liaison" onClick={() => st().set('linkage', !linkage)}><Link2 size={16} /></button>
         <span className="sep" />
-        <button className="icon-btn" title="Dézoomer (⌘−)" aria-label="Dézoomer" onClick={() => st().set('pxPerSec', Math.max(2, pxPerSec / 1.4))}><ZoomOut size={16} /></button>
+        <button className="icon-btn" title={kb("Dézoomer (⌘−)")} aria-label="Dézoomer" onClick={() => st().set('pxPerSec', Math.max(2, pxPerSec / 1.4))}><ZoomOut size={16} /></button>
         <input className="tl-zoom" type="range" min={0} max={100} aria-label="Zoom de la timeline"
           value={Math.round((Math.log(pxPerSec / 2) / Math.log(1000)) * 100)}
           onChange={e => st().set('pxPerSec', 2 * Math.pow(1000, Number(e.target.value) / 100))} />
-        <button className="icon-btn" title="Zoomer (⌘+)" aria-label="Zoomer" onClick={() => st().set('pxPerSec', Math.min(2000, pxPerSec * 1.4))}><ZoomIn size={16} /></button>
-        <button className="icon-btn" title="Ajuster (⇧Z)" aria-label="Ajuster à la fenêtre" onClick={fit}><Maximize2 size={16} /></button>
+        <button className="icon-btn" title={kb("Zoomer (⌘+)")} aria-label="Zoomer" onClick={() => st().set('pxPerSec', Math.min(2000, pxPerSec * 1.4))}><ZoomIn size={16} /></button>
+        <button className="icon-btn" title={kb("Ajuster (⇧Z)")} aria-label="Ajuster à la fenêtre" onClick={fit}><Maximize2 size={16} /></button>
       </div>
 
       <div className="tl-main">
@@ -448,10 +449,10 @@ function ClipMenu({ at, onClose }: { at: { x: number; y: number; clipId: string 
   const asset = p.assets.find(a => a.id === ref.clip.assetId);
   return (
     <div className="ctx" role="menu" style={{ left: Math.min(at.x, window.innerWidth - 220), top: Math.min(at.y, window.innerHeight - 320) }} onPointerDown={e => e.stopPropagation()}>
-      {item('Couper ici', '⌘B', splitAtPlayhead)}
-      {item('Copier', '⌘C', copySelection)}
-      {item('Coller', '⌘V', paste)}
-      {item('Dupliquer', '⌘D', duplicateSelection)}
+      {item('Couper ici', kb('⌘B'), splitAtPlayhead)}
+      {item('Copier', kb('⌘C'), copySelection)}
+      {item('Coller', kb('⌘V'), paste)}
+      {item('Dupliquer', kb('⌘D'), duplicateSelection)}
       <hr />
       {item(ref.clip.enabled ? 'Désactiver le clip' : 'Activer le clip', 'V', toggleEnabled)}
       {item('Lire à l’envers', '', () => st().edit(d => { const r = op.findClip(d, at.clipId)!; r.clip.reverse = !r.clip.reverse; }), !asset || asset.kind !== 'video')}

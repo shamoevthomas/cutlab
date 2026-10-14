@@ -1,9 +1,10 @@
 // Phase 3: on-device background removal and face-following reframe on a real interview clip.
-import { test, expect, _electron as electron, ElectronApplication, Page } from '@playwright/test';
+import { test, expect, ElectronApplication, Page } from '@playwright/test';
 import { execFileSync } from 'node:child_process';
 import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
+import { launchApp, FFMPEG } from './helpers';
 
 const FIX = path.resolve('e2e/fixtures');
 const SHOTS = path.resolve('replica/test/shots');
@@ -13,7 +14,7 @@ let home: string;
 
 test.beforeAll(async () => {
   home = mkdtempSync(path.join(tmpdir(), 'cutlab-home-'));
-  app = await electron.launch({ args: ['.', '--no-sandbox'], env: { ...process.env, HOME: home } as any });
+  app = await launchApp(home);
   page = await app.firstWindow();
   await page.setViewportSize({ width: 1600, height: 1000 });
   page.on('pageerror', e => console.log('PAGE ERROR', e.message));
@@ -21,7 +22,7 @@ test.beforeAll(async () => {
 test.afterAll(async () => { await app?.close(); });
 
 const rgbAt = (file: string, t: number, x: number, y: number, w: number, h: number) => {
-  const raw = execFileSync('ffmpeg', ['-v', 'error', '-ss', String(t), '-i', file, '-frames:v', '1', '-vf', `crop=${w}:${h}:${x}:${y},scale=1:1`, '-f', 'rawvideo', '-pix_fmt', 'rgb24', '-']);
+  const raw = execFileSync(FFMPEG, ['-v', 'error', '-ss', String(t), '-i', file, '-frames:v', '1', '-vf', `crop=${w}:${h}:${x}:${y},scale=1:1`, '-f', 'rawvideo', '-pix_fmt', 'rgb24', '-']);
   return [raw[0], raw[1], raw[2]];
 };
 

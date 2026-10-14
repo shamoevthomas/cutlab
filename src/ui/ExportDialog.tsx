@@ -5,6 +5,7 @@ import { Modal, fmtDur } from './common';
 import { exportProject, ExportSettings, outputSize, bitrateFor, ExportProgress } from '../engine/export';
 import { projectDuration } from '../model/ops';
 import { bridge } from '../bridge';
+import { fileManagerName } from '../platform';
 
 export function ExportDialog({ onClose }: { onClose: () => void }) {
   const project = useStore(s => s.project)!;
@@ -52,7 +53,7 @@ export function ExportDialog({ onClose }: { onClose: () => void }) {
     <Modal title="Exporter" onClose={() => { abort.current?.abort(); onClose(); }} width={520} footer={
       progress ? <button className="btn" onClick={() => abort.current?.abort()}>Annuler</button>
         : done ? <>
-          {bridge.reveal && <button className="btn ghost" onClick={() => bridge.reveal!(done)}><FolderOpen size={14} /> Afficher dans le Finder</button>}
+          {bridge.reveal && <button className="btn ghost" onClick={() => bridge.reveal!(done)}><FolderOpen size={14} /> Afficher dans {fileManagerName}</button>}
           <button className="btn primary" onClick={onClose}>Terminé</button></>
           : <><button className="btn ghost" onClick={onClose}>Annuler</button><button className="btn primary" disabled={range[1] <= range[0]} onClick={run}><Download size={14} /> Exporter</button></>
     }>

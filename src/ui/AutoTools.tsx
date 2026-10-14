@@ -5,6 +5,7 @@ import { Modal, SliderRow, Switch, fmtDur } from './common';
 import { ASR_MODELS, LANGUAGES, AsrProgress, TRANSLATE_TO } from '../engine/asr';
 import { generateCaptions, CaptionStyle, planAutoCut, applyAutoCut, CutPlan } from '../actions';
 import * as op from '../model/ops';
+import { kb } from '../platform';
 
 function safeGet(k: string, d: string) { try { return localStorage.getItem(k) ?? d; } catch { return d; } }
 function safeSet(k: string, v: string) { try { localStorage.setItem(k, v); } catch { /* ignore */ } }
@@ -112,7 +113,7 @@ export function AutoCutModal({ onClose }: { onClose: () => void }) {
       {plans && <div className="row" style={{ gap: 8 }}><b>{count}</b> passage{count > 1 ? 's' : ''} à retirer · <b>−{fmtDur(total)}</b> <span className="muted">({(total / 1e6).toFixed(1)} s)</span></div>}
       {plans && count === 0 && <div className="muted">Aucun blanc trouvé avec ces réglages.</div>}
       {error && <div role="alert" style={{ color: 'var(--c-danger)' }}>{error}</div>}
-      <div className="hint">Rien n’est coupé avant que tu cliques sur « Couper ». Tout reste annulable (⌘Z).</div>
+      <div className="hint">Rien n’est coupé avant que tu cliques sur « Couper ». Tout reste annulable ({kb('⌘Z')}).</div>
     </Modal>
   );
 }

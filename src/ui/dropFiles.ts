@@ -2,7 +2,7 @@ import { bridge } from '../bridge';
 import { storeFile } from '../bridge/web';
 import type { PickedFile } from '../bridge/types';
 
-/** Files dropped from Finder: on desktop keep their real path, in the browser store them. */
+/** Files dropped from the Finder / Explorer: on desktop keep their real path, in the browser store them. */
 export async function pickedFromDrop(list: FileList): Promise<PickedFile[]> {
   const files = Array.from(list);
   const w = window as any;

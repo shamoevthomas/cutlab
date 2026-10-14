@@ -6,6 +6,7 @@ import { createProject, openProject } from '../actions';
 import { useStore } from '../store';
 import { Modal, fmtDur } from './common';
 import { RATIOS, uid } from '../model/schema';
+import { trashName } from '../platform';
 
 const RATIO_LABELS: Record<string, string> = { '16:9': 'YouTube', '9:16': 'Reel / TikTok', '1:1': 'Carré', '4:5': 'Post', '4:3': 'Classique', '21:9': 'Cinéma' };
 
@@ -69,6 +70,7 @@ export function Home() {
 
   return (
     <div className="home">
+      <div className="home-drag drag-region" aria-hidden="true" />
       <aside>
         <div className="brand drag-region"><Clapperboard size={22} color="var(--c-accent)" /> Cut<b>Lab</b></div>
         <button className="nav-item active"><HomeIcon size={16} /> Accueil</button>
@@ -77,7 +79,7 @@ export function Home() {
         <button className="nav-item" onClick={soon('Studio vidéo IA')}><Film size={16} /> Studio vidéo <span className="badge">bientôt</span></button>
         <button className="nav-item" onClick={soon('Studio image IA')}><Image size={16} /> Studio image <span className="badge">bientôt</span></button>
         <div className="nav-title">Gestion</div>
-        <button className="nav-item" onClick={() => bridge.kind === 'electron' ? notify('info', 'Projets : ~/Movies/CutLab/Projects') : notify('info', 'Version navigateur : projets stockés dans le navigateur')}><FolderOpen size={16} /> Dossier des projets</button>
+        <button className="nav-item" onClick={() => bridge.openDataFolder ? bridge.openDataFolder() : notify('info', 'Version navigateur : projets stockés dans le navigateur')}><FolderOpen size={16} /> Dossier des projets</button>
         <div className="grow" />
         <div className="faint" style={{ fontSize: 'var(--fs-xs)', padding: '0 10px' }}>Usage personnel · tout débloqué</div>
       </aside>
@@ -137,7 +139,7 @@ export function Home() {
           <button className="btn ghost" onClick={() => setDeleting(null)}>Annuler</button>
           <button className="btn danger" onClick={async () => { await bridge.deleteProject(deleting.id); setDeleting(null); refresh(); }}>Supprimer</button>
         </>}>
-          <div>« {deleting.name} » {bridge.kind === 'electron' ? 'ira dans la corbeille du Mac.' : 'sera supprimé de ce navigateur.'} Tes fichiers vidéo d’origine ne sont pas touchés.</div>
+          <div>« {deleting.name} » {bridge.kind === 'electron' ? `ira dans ${trashName}.` : 'sera supprimé de ce navigateur.'} Tes fichiers vidéo d’origine ne sont pas touchés.</div>
         </Modal>
       )}
     </div>
