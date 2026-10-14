@@ -8,6 +8,7 @@ import { FILTERS, TRANSITIONS } from '../engine/scene';
 import * as op from '../model/ops';
 import { defaultTextStyle, uid, TextStyle } from '../model/schema';
 import { makeSticker, STICKERS } from '../engine/stickers';
+import { AutoCaptionsPanel } from './AutoTools';
 
 const TABS: { id: Panel; label: string; icon: any }[] = [
   { id: 'media', label: 'Médias', icon: Film },
@@ -296,11 +297,8 @@ function CaptionTab() {
     <div className="asset-body">
       <nav className="subnav"><button className="on">Sous-titres</button></nav>
       <div className="asset-content">
-        <div className="empty" style={{ padding: 20 }}>
-          <Captions size={22} />
-          <b>Sous-titres automatiques</b>
-          <div style={{ fontSize: 'var(--fs-sm)' }}>Transcription mot à mot avec Whisper (en local sur ton Mac) : phase 2.</div>
-        </div>
+        <AutoCaptionsPanel />
+        <hr style={{ border: 0, borderTop: '1px solid var(--c-border)', width: '100%' }} />
         <button className="btn" onClick={importSubtitles}><Upload size={14} /> Importer un fichier SRT / VTT</button>
         <button className="btn ghost" onClick={exportSubtitles}>Exporter les textes en SRT</button>
         <div className="hint">Chaque ligne devient un clip texte modifiable. Pour changer le style de tous : sélectionne-les (⇧-clic) puis modifie dans l’inspecteur.</div>

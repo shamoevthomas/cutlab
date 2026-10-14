@@ -89,8 +89,8 @@ export function Home() {
             <p>Décris le montage que tu veux, l’assistant le fait sur ta timeline.</p>
             <input className="input" disabled placeholder="Ex. coupe les blancs et ajoute des sous-titres" style={{ marginTop: 'auto' }} />
           </div>
-          <button className="tile" onClick={soon('Sous-titres auto')}><span className="ic"><Captions size={18} /></span><h4>Sous-titres auto</h4><p>Transcription mot à mot</p></button>
-          <button className="tile" onClick={soon('Coupe des blancs')}><span className="ic"><Scissors size={18} /></span><h4>Coupe des blancs</h4><p>Silences et hésitations</p></button>
+          <button className="tile" onClick={() => setCreating(true)}><span className="ic"><Captions size={18} /></span><h4>Sous-titres auto</h4><p>Dans l’éditeur : onglet Sous-titres</p></button>
+          <button className="tile" onClick={() => setCreating(true)}><span className="ic"><Scissors size={18} /></span><h4>Coupe des blancs</h4><p>Dans l’éditeur : barre de la timeline</p></button>
           <button className="tile" onClick={soon('Recadrage auto')}><span className="ic"><Wand2 size={18} /></span><h4>Recadrage 9:16</h4><p>Suit le visage</p></button>
           <button className="tile" onClick={soon('Vidéo longue → shorts')}><span className="ic"><Film size={18} /></span><h4>Long → shorts</h4><p>Repère les meilleurs moments</p></button>
         </div>

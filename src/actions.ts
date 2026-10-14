@@ -1,3 +1,7 @@
+import { timelineAudio16k, transcribe, assetSamples, resampleMono, AsrProgress } from './engine/asr';
+import { wordsToCues, fillerRanges, REEL_CUES, LONG_CUES, Word } from './model/captions';
+import { detectSilences, autoThreshold, rmsDb } from './model/silence';
+import { decodeAudio } from './engine/media';
 // User-level actions shared by menus, shortcuts and panels.
 import { useStore } from './store';
 import { bridge } from './bridge';
@@ -202,4 +206,98 @@ export async function saveNow(cover?: string) {
   saving = bridge.saveProject(p, cover).then(() => { if (st().project === p) st().markSaved(); })
     .catch((e) => st().notify('error', 'Sauvegarde impossible : ' + (e?.message ?? e)));
   await saving;
+}
+
+// ---------- phase 2: auto captions & auto-cut ----------
+
+export type CaptionStyle = 'reel' | 'classic' | 'band' | 'yellow';
+export const CAPTION_STYLES: { id: CaptionStyle; label: string }[] = [
+  { id: 'reel', label: 'Reel (3-4 mots, gros)' },
+  { id: 'classic', label: 'Classique (phrases)' },
+  { id: 'band', label: 'Bandeau noir' },
+  { id: 'yellow', label: 'Jaune contour' },
+];
+
+function captionStyle(id: CaptionStyle, portrait: boolean) {
+  const base = { ...defaultTextStyle(), shadow: false };
+  switch (id) {
+    case 'reel': return { ...base, size: portrait ? 78 : 64, bold: true, strokeWidth: 7, strokeColor: '#000000', font: 'Poppins' };
+    case 'classic': return { ...base, size: portrait ? 54 : 46, bold: true, strokeWidth: 4, strokeColor: '#000000' };
+    case 'band': return { ...base, size: portrait ? 52 : 44, bold: true, bgColor: '#000000', bgOpacity: 80 };
+    case 'yellow': return { ...base, size: portrait ? 72 : 60, bold: true, color: '#ffd23f', strokeWidth: 7, strokeColor: '#000000', font: 'Poppins' };
+  }
+}
+
+export async function generateCaptions(opts: { model: string; language: string | null; style: CaptionStyle; upper: boolean }, onProgress: (p: AsrProgress) => void) {
+  const p = st().project;
+  if (!p) return 0;
+  onProgress({ phase: 'audio', text: 'Préparation du son de la timeline…' });
+  const samples = await timelineAudio16k(p);
+  if (!samples) throw new Error('Aucun son dans la timeline');
+  const words = await transcribe(samples, opts.model, opts.language, onProgress);
+  if (!words.length) throw new Error('Aucune parole détectée');
+  const portrait = p.canvas.height > p.canvas.width;
+  const cues = wordsToCues(words, { ...(opts.style === 'reel' || opts.style === 'yellow' ? REEL_CUES : LONG_CUES), upper: opts.upper });
+  const style = captionStyle(opts.style, portrait);
+  st().edit(d => {
+    d.tracks = d.tracks.filter(t => t.role !== 'captions');
+    const tracks: Track[] = [];
+    for (const cue of cues) {
+      const start = Math.round(cue.start * 1e6), dur = Math.max(op.MIN_CLIP_US, Math.round((cue.end - cue.start) * 1e6));
+      let tr = tracks.find(t => op.isFree(t, start, dur));
+      if (!tr) { tr = { ...newTrack('text'), role: 'captions' }; tracks.push(tr); }
+      const c = newClip({ startUs: start, durationUs: dur, label: cue.text,
+        text: { content: cue.text, style: { ...style }, words: cue.words.map(w => ({ t0Us: Math.round((w.start - cue.start) * 1e6), t1Us: Math.round((w.end - cue.start) * 1e6), text: w.text })) } });
+      c.transform.y = portrait ? -0.45 : -0.72;
+      tr.clips.push(c);
+    }
+    d.tracks.push(...tracks);
+  });
+  return cues.length;
+}
+
+export interface CutPlan { clipId: string; removeSrc: [number, number][]; removedUs: number; count: number }
+
+/** Find silences (and optionally fillers) in the given clips without changing anything. */
+export async function planAutoCut(clipIds: string[], o: { thresholdDb: number | 'auto'; minSilenceS: number; padS: number; fillers: boolean; model: string; language: string | null },
+  onProgress: (p: AsrProgress) => void): Promise<CutPlan[]> {
+  const p = st().project!;
+  const plans: CutPlan[] = [];
+  for (const id of clipIds) {
+    const ref = op.findClip(p, id);
+    const a = ref && p.assets.find(x => x.id === ref.clip.assetId);
+    if (!ref || !a || a.kind === 'image') continue;
+    onProgress({ phase: 'audio', text: `Analyse du son : ${a.name}` });
+    const s = await assetSamples(a);
+    if (!s) continue;
+    const c = ref.clip;
+    const s0 = c.inUs / 1e6, s1 = (c.inUs + c.durationUs * c.speed) / 1e6;
+    const slice = s.data.subarray(Math.floor(s0 * s.rate), Math.ceil(s1 * s.rate));
+    const thr = o.thresholdDb === 'auto' ? autoThreshold(rmsDb(slice, s.rate)) : o.thresholdDb;
+    const remove: [number, number][] = detectSilences(slice, s.rate, { thresholdDb: thr, minSilenceS: o.minSilenceS, padS: o.padS })
+      .map(([x, y]) => [Math.round((s0 + x) * 1e6), Math.round((s0 + y) * 1e6)]);
+    if (o.fillers) {
+      const buf = await decodeAudio(a);
+      if (buf) {
+        const pcm = await resampleMono(buf, s0, s1);
+        const words: Word[] = await transcribe(pcm, o.model, o.language, onProgress);
+        for (const f of fillerRanges(words)) remove.push([Math.round((s0 + f.start) * 1e6), Math.round((s0 + f.end) * 1e6)]);
+      }
+    }
+    const merged = mergeRanges(remove);
+    plans.push({ clipId: id, removeSrc: merged, count: merged.length, removedUs: Math.round(merged.reduce((t, [x, y]) => t + (y - x), 0) / c.speed) });
+  }
+  return plans;
+}
+
+function mergeRanges(r: [number, number][]): [number, number][] {
+  const s = [...r].sort((a, b) => a[0] - b[0]);
+  const out: [number, number][] = [];
+  for (const x of s) { const l = out[out.length - 1]; if (l && x[0] <= l[1]) l[1] = Math.max(l[1], x[1]); else out.push([...x] as [number, number]); }
+  return out;
+}
+
+export function applyAutoCut(plans: CutPlan[]) {
+  st().edit(d => { for (const pl of plans) op.cutSourceRanges(d, pl.clipId, pl.removeSrc); });
+  st().select([]);
 }

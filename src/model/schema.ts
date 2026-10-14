@@ -69,7 +69,7 @@ export interface Clip {
   fadeOutUs: Us;
   keyframes: Keyframe[];
   effects: ClipEffect[];
-  text?: { content: string; style: TextStyle };
+  text?: { content: string; style: TextStyle; words?: CaptionWord[] }; // words: relative to clip start
   animIn: AnimPreset;
   animOut: AnimPreset;
   animDurUs: Us;
@@ -79,6 +79,7 @@ export interface Clip {
 export interface Track {
   id: string;
   kind: TrackKind;
+  role?: 'captions';      // auto-captions track: regenerating replaces it
   isMain: boolean;
   locked: boolean;
   hidden: boolean;

@@ -25,7 +25,8 @@ export function Editor() {
 
   // save before leaving / closing
   useEffect(() => {
-    const before = (e: BeforeUnloadEvent) => { if (useStore.getState().dirty) { saveNow(); e.preventDefault(); } };
+    // never block closing (Electron would silently refuse to quit); fire a last save instead
+    const before = () => { if (useStore.getState().dirty) saveNow(); };
     window.addEventListener('beforeunload', before);
     return () => window.removeEventListener('beforeunload', before);
   }, []);

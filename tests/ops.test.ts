@@ -145,3 +145,22 @@ describe('move, speed, snapping, keyframes', () => {
     expect(d.startUs).toBe(10_000_000); invariants(p);
   });
 });
+
+describe('auto-cut', () => {
+  it('cutSourceRanges splits into kept parts and ripples the main track', () => {
+    const a = vid(10_000_000), b = vid(2_000_000, 'b'); const p = setup(a, b);
+    const c = op.addAssetClip(p, a, 0); const c2 = op.addAssetClip(p, b, 99e9);
+    const ids = op.cutSourceRanges(p, c.id, [[2_000_000, 3_000_000], [6_000_000, 7_500_000]]);
+    expect(ids).toHaveLength(3);
+    const m = op.mainTrack(p);
+    expect(m.clips.map(x => [x.inUs, x.durationUs])).toEqual([[0, 2_000_000], [3_000_000, 3_000_000], [7_500_000, 2_500_000], [0, 2_000_000]]);
+    expect(c2.startUs).toBe(7_500_000);
+    invariants(p);
+  });
+  it('respects speed', () => {
+    const a = vid(10_000_000); const p = setup(a);
+    const c = op.addAssetClip(p, a, 0); op.setSpeed(p, c.id, 2);
+    op.cutSourceRanges(p, c.id, [[4_000_000, 6_000_000]]);
+    expect(op.mainTrack(p).clips.map(x => x.durationUs)).toEqual([2_000_000, 2_000_000]);
+  });
+});

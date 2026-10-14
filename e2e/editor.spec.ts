@@ -17,7 +17,7 @@ async function stubOpen(files: string[]) {
 
 test.beforeAll(async () => {
   home = mkdtempSync(path.join(tmpdir(), 'cutlab-home-'));
-  app = await electron.launch({ args: ['.', '--no-sandbox'], env: { ...process.env, HOME: home } as any });
+  app = await electron.launch({ args: ['.', '--no-sandbox', ...(process.env.CUTLAB_TEST_INSECURE ? ['--ignore-certificate-errors'] : [])], env: { ...process.env, HOME: home } as any });
   page = await app.firstWindow();
   await page.setViewportSize({ width: 1600, height: 1000 });
   page.on('pageerror', e => console.log('PAGE ERROR', e.message));

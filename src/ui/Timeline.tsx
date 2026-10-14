@@ -9,6 +9,7 @@ import type { Clip, Project, Track } from '../model/schema';
 import { buildPeaks, buildStrip, getPeaks, getStrip, PEAKS_PER_SEC } from '../engine/media';
 import { addAssetAtPlayhead, addMarker, deleteSelection, deleteSide, duplicateSelection, importFiles, splitAtPlayhead, copySelection, paste, toggleEnabled } from '../actions';
 import { fmtDur } from './common';
+import { AutoCutModal } from './AutoTools';
 
 const LEFT_PAD = 12;     // px before t=0
 const SNAP_PX = 8;
@@ -37,6 +38,7 @@ export function Timeline() {
   const [dropTrack, setDropTrack] = useState<string | null>(null);
   const [blade, setBlade] = useState(false);
   const [ctx, setCtx] = useState<{ x: number; y: number; clipId: string } | null>(null);
+  const [autoCut, setAutoCut] = useState(false);
   const [, force] = useState(0);
   const [width, setWidth] = useState(800);
 
@@ -246,6 +248,8 @@ export function Timeline() {
         <button className="icon-btn" disabled={!selection.length} title="Supprimer (⌫)" aria-label="Supprimer" onClick={() => deleteSelection()}><Trash2 size={16} /></button>
         <button className="icon-btn" disabled={!selection.length} title="Dupliquer (⌘D)" aria-label="Dupliquer" onClick={duplicateSelection}><Copy size={16} /></button>
         <button className="icon-btn" title="Repère (M)" aria-label="Ajouter un repère" onClick={addMarker}><Bookmark size={16} /></button>
+        <span className="sep" />
+        <button className="btn sm ghost" title="Coupe automatique des blancs" onClick={() => setAutoCut(true)} disabled={!project.tracks.some(t => t.clips.some(c => c.assetId))}><Scissors size={14} /> Coupe des blancs</button>
         <span className="grow" />
         {sel1 && <span className="faint mono" style={{ fontSize: 'var(--fs-xs)', marginRight: 8 }}>{fmtDur(sel1.clip.durationUs)}</span>}
         <button className="icon-btn" disabled title="Voix off : phase 3" aria-label="Enregistrer une voix off"><Mic size={16} /></button>
@@ -307,6 +311,7 @@ export function Timeline() {
         </div>
       </div>
       {ctx && <ClipMenu at={ctx} onClose={() => setCtx(null)} />}
+      {autoCut && <AutoCutModal onClose={() => setAutoCut(false)} />}
     </div>
   );
 }

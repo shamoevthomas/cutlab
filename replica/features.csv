@@ -72,11 +72,11 @@ Text bubbles,text,could,yes,no,
 Text effects presets,text,should,yes,yes,own presets
 Text templates,text,should,yes,no,own templates (not CapCut's)
 Text animations in out loop,text,must,yes,yes,own animation set
-Auto captions (speech to text),captions,must,pro,no,Whisper; Pro in CapCut 2026
-Caption language choice,captions,must,yes,no,
+Auto captions (speech to text),captions,must,pro,yes,"local Whisper (transformers.js, WebGPU/WASM), word timestamps"
+Caption language choice,captions,must,yes,yes,
 Bilingual / translated captions,captions,should,yes,no,LLM or translation API
 Caption style apply to all,captions,must,yes,partial,multi-select styling
-Caption templates and keyword highlight,captions,should,yes,no,word-level karaoke style
+Caption templates and keyword highlight,captions,should,yes,partial,4 caption styles; keyword highlight later
 Caption emojis AI,captions,could,yes,no,
 Speaker identification captions,captions,could,pro,no,diarization
 Manual captions,captions,must,yes,yes,
@@ -120,9 +120,9 @@ Retouch face and body,ai,could,pro,no,
 Motion tracking for text and stickers,ai,should,yes,no,OpenCV tracker
 Camera tracking face,ai,could,pro,no,
 Auto reframe to 9:16,ai,must,pro,no,face/person tracking crop
-Transcript-based editing,ai,must,yes,no,S13
-Remove filler words pauses repeats,ai,must,pro,no,S13 (key for Thomas)
-Auto cut on beats speech prompt,ai,should,yes,no,S17
+Transcript-based editing,ai,must,yes,partial,auto-cut dialog; text editor view later
+Remove filler words pauses repeats,ai,must,pro,partial,"pauses: RMS detection; fillers/repeats via Whisper (Whisper tends to drop ""euh"")"
+Auto cut on beats speech prompt,ai,should,yes,partial,speech pauses only
 Long video to shorts,ai,should,yes,no,S16 LLM highlight picking
 Video translator with dubbing,ai,could,pro,no,S15 ASR + translate + TTS
 Lip-sync for dubbing,ai,could,pro,no,

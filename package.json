@@ -33,6 +33,7 @@
     "extraResources": []
   },
   "dependencies": {
+    "@huggingface/transformers": "^3.0.2",
     "immer": "^10.1.1",
     "lucide-react": "^0.453.0",
     "mp4-muxer": "^5.1.3",

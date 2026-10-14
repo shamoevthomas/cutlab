@@ -9,6 +9,7 @@ const ROOT = path.join(app.getPath('videos'), 'CutLab');
 const PROJECTS = path.join(ROOT, 'Projects');
 
 protocol.registerSchemesAsPrivileged([
+  { scheme: 'app', privileges: { standard: true, secure: true, supportFetchAPI: true, corsEnabled: true, stream: true } },
   { scheme: 'media', privileges: { standard: true, secure: true, stream: true, supportFetchAPI: true, corsEnabled: true, bypassCSP: true } },
 ]);
 
@@ -19,6 +20,20 @@ const MIME = { '.mp4': 'video/mp4', '.m4v': 'video/mp4', '.mov': 'video/quicktim
 
 const toUrl = (p) => 'media://local/' + encodeURIComponent(p);
 const fromUrl = (u) => decodeURIComponent(new URL(u).pathname.slice(1));
+
+const DIST = path.join(__dirname, '..', 'dist');
+/** app://cutlab/<file> serves the built interface (a real origin: fetch, workers, wasm and Cache Storage all work). */
+async function handleApp(request) {
+  const rel = decodeURIComponent(new URL(request.url).pathname).replace(/^\/+/, '') || 'index.html';
+  const file = path.normalize(path.join(DIST, rel));
+  if (!file.startsWith(DIST)) return new Response('forbidden', { status: 403 });
+  try {
+    const data = await fsp.readFile(file);
+    const ext = path.extname(file).toLowerCase();
+    const type = { '.html': 'text/html', '.js': 'text/javascript', '.mjs': 'text/javascript', '.css': 'text/css', '.wasm': 'application/wasm', '.json': 'application/json', '.svg': 'image/svg+xml', '.png': 'image/png' }[ext] || 'application/octet-stream';
+    return new Response(data, { headers: { 'Content-Type': type, 'Cross-Origin-Opener-Policy': 'same-origin', 'Cross-Origin-Embedder-Policy': 'credentialless' } });
+  } catch { return new Response('not found', { status: 404 }); }
+}
 
 /** media://local/<encoded absolute path>, with Range support so <video> can seek. */
 function handleMedia(request) {
@@ -116,10 +131,11 @@ function createWindow() {
     webPreferences: { preload: path.join(__dirname, 'preload.cjs'), contextIsolation: true, sandbox: false },
   });
   if (process.env.CUTLAB_DEV) win.loadURL('http://localhost:5173');
-  else win.loadFile(path.join(__dirname, '..', 'dist', 'index.html'));
+  else win.loadURL('app://cutlab/index.html');
 }
 
 app.whenReady().then(() => {
+  protocol.handle('app', handleApp);
   protocol.handle('media', handleMedia);
   registerIpc();
   createWindow();

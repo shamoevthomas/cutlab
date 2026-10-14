@@ -358,3 +358,45 @@ export function snapTime(p: Project, t: Us, tolUs: Us, extra: Us[] = [], ignoreC
   extra.forEach(consider);
   return bestD <= tolUs ? { t: best, snapped: true } : { t, snapped: false };
 }
+
+// ---------- auto-cut ----------
+
+/**
+ * Remove source-time ranges (µs into the asset) from a clip: the clip becomes several clips
+ * that play the kept parts back to back. Returns the ids of the new clips.
+ */
+export function cutSourceRanges(p: Project, clipId: string, removeSrc: [Us, Us][]): string[] {
+  const ref = findClip(p, clipId);
+  if (!ref) return [];
+  const { clip, track, index } = ref;
+  const srcStart = clip.inUs, srcEnd = clip.inUs + clip.durationUs * clip.speed;
+  const rem = removeSrc.map(([a, b]) => [Math.max(srcStart, a), Math.min(srcEnd, b)] as [Us, Us]).filter(([a, b]) => b > a).sort((a, b) => a[0] - b[0]);
+  if (!rem.length) return [clip.id];
+  const keep: [Us, Us][] = [];
+  let cur = srcStart;
+  for (const [a, b] of rem) { if (a > cur) keep.push([cur, a]); cur = Math.max(cur, b); }
+  if (cur < srcEnd) keep.push([cur, srcEnd]);
+  const minSrc = MIN_CLIP_US * clip.speed;
+  const parts = keep.filter(([a, b]) => b - a >= minSrc);
+  if (clip.reverse) parts.reverse();
+  let t = clip.startUs;
+  const pieces: Clip[] = parts.map(([a, b], i) => {
+    const c: Clip = JSON.parse(JSON.stringify(clip));
+    c.id = i === 0 ? clip.id : uid();
+    c.inUs = Math.round(a);
+    c.durationUs = Math.round((b - a) / clip.speed);
+    c.startUs = t;
+    c.keyframes = [];
+    if (i > 0) c.fadeInUs = 0;
+    if (i < parts.length - 1) c.fadeOutUs = 0;
+    t += c.durationUs;
+    return c;
+  });
+  const removedUs = clip.durationUs - (t - clip.startUs);
+  track.clips.splice(index, 1, ...pieces);
+  if (track.isMain) compactMain(track);
+  else for (const c of track.clips.slice(index + pieces.length)) c.startUs -= removedUs;
+  p.transitions = p.transitions.filter(x => x.fromClipId !== clip.id || pieces.length > 0);
+  if (!pieces.length) pruneEmptyTracks(p);
+  return pieces.map(c => c.id);
+}
